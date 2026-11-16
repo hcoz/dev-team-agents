@@ -1,0 +1,18 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local Claude Code settings (never commit)
+.claude/settings.local.json
+
+# Per-run team state, if the team is ever run on this repo itself
+.team/runs/
+
+# Backups and scratch output from install/uninstall or manual testing
+*.bak
+*.orig
+tmp/
