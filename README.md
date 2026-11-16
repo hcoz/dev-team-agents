@@ -7,7 +7,7 @@ You give the team a rough request. It analyzes, designs, implements and tests th
 - **Greenfield:** in an empty directory, the team proposes a tech stack for you to approve.
 - **Brownfield:** in an existing codebase, the team discovers the stack and conventions for you to confirm.
 
-> **Status:** early development (Phase 0, skeleton). Nothing is installable yet.
+> **Status:** early development (Phase 1 done: hand-off contract and run templates). Nothing is installable yet.
 
 ## Layout
 
