@@ -173,7 +173,8 @@ dev-team-agents/
 │   └── tester.md
 ├── skills/
 │   ├── team-handoff/SKILL.md        # status codes, file formats, rework protocol
-│   ├── project-discovery/SKILL.md   # brownfield: build/refresh project-profile.md
+│   ├── project-discovery/SKILL.md   # mode detection; brownfield: build/refresh project-profile.md
+│   │   └── scripts/stack-scan.sh    # mode, fingerprint, staleness check (deterministic)
 │   ├── stack-selection/SKILL.md     # greenfield: propose a stack, write stack-decision.md
 │   └── definition-of-done/SKILL.md  # generic DoD, extended by the project profile
 ├── playbooks/                       # optional, grows over time (e.g. python-flask.md)
@@ -301,6 +302,7 @@ Commit conventions: Conventional Commits, one commit per phase minimum, small fo
 
 ## 9. To verify during implementation
 - Whether symlinks inside `~/.claude/agents/` are picked up reliably (else copy).
+- Install must also provide `~/.claude/dev-team/` (templates and playbooks, referenced by the skills) and keep `skills/project-discovery/scripts/stack-scan.sh` executable.
 - Exact `memory: project` / `memory: user` behavior and file locations.
 - `claude --agent orchestrator` behavior with a restricted `Agent(...)` tool list.
 - Hook behavior for subagent-defined `PreToolUse` hooks in practice, including path-based write restriction for BA/Architect/Tester.
