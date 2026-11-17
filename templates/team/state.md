@@ -25,12 +25,17 @@
 
 ## Code
 
+<!-- Run base: the default-branch commit the run started from. One row per Developer call that made a worktree.
+     A later task's fresh Developer starts from the previous task's head (START_FROM), so its Base is that head.
+     The last row's branch holds the whole run and is the one merged at Gate 3. -->
+
 | Field | Value |
 |---|---|
-| Worktree | <absolute path> |
-| Branch | <branch> |
-| Base commit | <sha the branch started from> |
-| Head commit | <sha after the last Developer or Tester commit> |
+| Default branch | <main> |
+| Run base | <sha> |
+
+| Task | Developer agent ID | Worktree | Branch | Base | Head |
+|---|---|---|---|---|---|
 
 ## Gates
 
@@ -53,16 +58,20 @@ Caps: 3 rounds per task, 8 per run.
 
 ## Budget
 
+<!-- Written by run-state.sh. Tokens are input-token equivalents, summed from the subagent transcripts:
+     input + 1.25 × cache writes + 0.1 × cache reads + 5 × output. Roughly proportional to cost on one model. -->
+
 | | Tokens |
 |---|---|
-| Soft budget | <from settings or profile> |
-| Hard budget | <from settings or profile> |
+| Soft budget | <from profile, settings or defaults> |
+| Hard budget | <from profile, settings or defaults> |
 | Spent so far | 0 |
+| Soft budget acknowledged | no |
 
 ## Usage log
 
-| # | Time | Agent | Step | Model | Tokens | Duration | Rework round | Status |
-|---|---|---|---|---|---|---|---|---|
+| # | Time | Agent | Agent ID | Step | Model | Tokens | Duration | Rework round | Status |
+|---|---|---|---|---|---|---|---|---|---|
 
 ## Owner decisions
 

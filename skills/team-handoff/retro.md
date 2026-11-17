@@ -14,13 +14,13 @@ The retro turns the candidate learnings from agent replies into lasting knowledg
    |---|---|---|
    | `project` | Only true for this codebase | `.team/learnings.md` |
    | `stack` | True for any project on this stack | `~/.claude/dev-team/playbooks/<stack>.md` |
-   | `general` | True for any project | user-level memory |
+   | `general` | True for any project | the Orchestrator's user-level memory |
    | `drop` | One-off, already known, or not actionable | nowhere |
 
 4. **Write the project learnings.** Append the `project` items to `learnings.md` in the entry format from its header. They do not need approval, but list them in the run's final report.
 5. **Promote with approval.** Show the `stack` and `general` items to the owner in a single multi-select question. Write only the approved ones:
    - `stack` items go into the matching playbook, which is created from `playbooks/README.md` if it does not exist yet. Do not commit in the dev-team-agents repo; give the owner the changed paths.
-   - `general` items go into user-level memory.
+   - `general` items go into the Orchestrator's user-level memory (`~/.claude/agent-memory/orchestrator/`), tagged with the role they apply to. The Orchestrator passes them to that role as `OWNER RULES` in later delegation prompts.
 
    Nothing reaches cross-project scope without the owner's approval.
 6. **Compact** when `learnings.md` has more than ~150 lines of entries. Aim for at most ~100 lines afterwards:

@@ -26,12 +26,13 @@ Every role follows this contract. State lives in files, not in conversation: if 
 
 | Role · step | Runs in | Reads | Writes (owns) | Reply must also state |
 |---|---|---|---|---|
-| **Orchestrator** | every run | request, `.team/` files as a step needs them, Agent results | `state.md` and `learnings.md` (sole writer); `Status` columns of `tasks.md` and `roadmap.md`; the `Status` line of `requirements.md` and `design.md` at their gate; in `project-profile.md` only `Status`, the fingerprint block and *Promoted rules*; run folder; `git init` and merge after approval | (talks to the human) |
+| **Orchestrator** | every run | request, `.team/` files as a step needs them, Agent results | `state.md` (incl. the S-run scope note) and `learnings.md` (sole writer); `Status` columns of `tasks.md` and `roadmap.md`; the `Status` line of `requirements.md` and `design.md` at their gate; in `project-profile.md` only `Status`, the fingerprint block, *Promoted rules* and (after M0) the *Verified*/*Duration* columns; run folder; `git init` and merge after approval | (talks to the human) |
 | **BA** | L | request (in prompt), profile, learnings | `requirements.md` | open questions, as `NEEDS_HUMAN` |
 | **Architect · discover** | brownfield, missing or stale profile | repo (read only), playbooks | `project-profile.md` | profile commands that failed |
 | **Architect · stack proposal** | greenfield | `requirements.md`, playbooks, official docs | `stack-decision.md` | recommended option |
+| **Architect · profile-update** | greenfield M0, when the scaffold differs from the planned profile | the Developer's worktree, reported deviations | `project-profile.md` | old → new per change |
 | **Architect · design** | M, L | L: `requirements.md`; M: request; profile, learnings | `design.md`, `tasks.md`; greenfield: `roadmap.md`; M: also `requirements.md` | requirement issues, if any |
-| **Developer** | S, M, L | its task in `tasks.md` (S: scope note in `state.md`), `design.md`, profile, learnings; on rework: `test-report.md` | code and commits in its worktree | worktree path, branch, head commit; per finding ID: fixed or disputed |
+| **Developer** | S, M, L | its task in `tasks.md` (S: scope note in `state.md`), `design.md`, profile, learnings; on rework: `test-report.md`; optional `START_FROM` commit | code and commits in its worktree | worktree path, branch, head commit; per finding ID: fixed or disputed |
 | **Tester** | S, M, L | `tasks.md` (relevant tests), acceptance criteria in `requirements.md` (S: scope note), profile commands, `git diff <base>..<head>` | `test-report.md`, `logs/`, test files in the worktree | verdict, open finding IDs |
 
 Rules for every role:
@@ -44,7 +45,7 @@ Rules for every role:
 
 - The Developer works in an isolated git worktree. It commits on its own branch there, and never pushes or merges. A new worktree starts from the default branch, so a later task in the same run either resumes the same Developer, or passes `START_FROM: <head commit of the previous task>` to a fresh one, which fast-forwards to it first.
 - Write scope is enforced per role by the `guard-write.sh` PreToolUse hook in each agent's frontmatter: it allows exactly the paths in §2 (plus the role's own agent memory) and blocks the rest.
-- After each Developer call the Orchestrator records the worktree path, branch, base commit (the commit the branch started from) and head commit in `state.md`.
+- After each Developer call the Orchestrator adds a row to the *Code* table in `state.md`: task, Developer agent ID, worktree path, branch, base commit (the commit the branch started from) and head commit. The last row's branch holds the whole run and is the one merged.
 - The Tester works in the same worktree and reviews `git diff <base>..<head>`. It may add or fix test files and commits them separately as `test: …`. It never edits production source. A defect in production code becomes a finding.
 - Only the Orchestrator merges, and only after Gate 3 approval.
 
@@ -94,8 +95,9 @@ Do not paste file contents, diffs or logs into the reply.
 
 ## 7. Run state and usage
 
-- Only the Orchestrator writes `state.md`. After every agent call it adds a usage-log row (agent, step, model, tokens, duration, rework round, status) using the figures from the Agent tool result.
-- Before each call it compares the tokens spent with the run's soft and hard budgets.
+- Only the Orchestrator writes `state.md`. All counting goes through `scripts/run-state.sh` (in this skill's folder): run folders, budgets, usage rows and rework caps.
+- After every agent call, `run-state.sh usage` adds a usage-log row (agent, agent ID, step, model, tokens, duration, rework round, status). The figures are summed from the subagent's transcript, because the Agent tool result only reports the final request's tokens.
+- Before each call the Orchestrator runs `run-state.sh check` and acts on its `level:` line.
 - When a run resumes, `state.md` is the source of truth for the current step, gate results, counters and worktree.
 
 ## 8. Learnings

@@ -61,7 +61,7 @@ You run in an **isolated git worktree**: your working directory. It was branched
 Use the team-handoff reply format. The summary is ≤ ~10 lines and also states:
 - `Worktree:` absolute path · `Branch:` name · `Base:` sha · `Head:` sha;
 - the checks you ran and their result, with the log path;
-- deviations from the design, if any;
+- deviations from the design, and any profile command that does not match what you built or ran (old → new), if any;
 - on rework: each finding ID marked *fixed* or *disputed* (with the reason).
 
 Never paste diffs, code or logs into the reply.

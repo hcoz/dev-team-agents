@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # guard-write.sh: PreToolUse hook that limits a dev-team role's file writes to the paths it owns.
 #
-#   guard-write.sh <role>        role: ba | architect | developer | tester
+#   guard-write.sh <role>        role: orchestrator | ba | architect | developer | tester
 #
 # Wired in each role's agent frontmatter for Write|Edit|MultiEdit|NotebookEdit, with
 # onFailure: block. Reads the hook JSON on stdin. An owned path gets an explicit "allow"
@@ -9,6 +9,7 @@
 #
 # Allowed paths (P = project root, W = any linked git worktree of P, never the main checkout):
 #   all roles   P/.claude/agent-memory/<role>/**  and  <cwd>/.claude/agent-memory/<role>/**
+#   orchestrator P/.team/** ; ~/.claude/dev-team/playbooks/*.md ; ~/.claude/agent-memory/orchestrator/**
 #   ba          P/.team/runs/<run-id>/requirements.md
 #   architect   P/.team/{project-profile,stack-decision,roadmap}.md
 #               P/.team/runs/<run-id>/{requirements,design,tasks}.md, P/.team/runs/<run-id>/logs/**
@@ -37,8 +38,8 @@ allow() {
 }
 
 case "$ROLE" in
-  ba|architect|developer|tester) ;;
-  *) deny "Unknown role '${ROLE}'. Usage: guard-write.sh ba|architect|developer|tester" ;;
+  orchestrator|ba|architect|developer|tester) ;;
+  *) deny "Unknown role '${ROLE}'. Usage: guard-write.sh orchestrator|ba|architect|developer|tester" ;;
 esac
 
 INPUT=$(cat)
@@ -151,6 +152,13 @@ for root in "$PROJECT" "$CWD"; do
   below "$TARGET" "$root/.claude/agent-memory/$ROLE" >/dev/null && allow
 done
 
+# Orchestrator: user-level knowledge (playbooks, its own user memory).
+if [ "$ROLE" = orchestrator ]; then
+  CFG=$(physical "${CLAUDE_CONFIG_DIR:-$HOME/.claude}") || deny "Cannot resolve the Claude config dir."
+  REL=$(below "$TARGET" "$CFG/dev-team/playbooks") && case "$REL" in */*) ;; *.md) allow ;; esac
+  below "$TARGET" "$CFG/agent-memory/orchestrator" >/dev/null && allow
+fi
+
 # Writes inside a linked worktree (developer, tester).
 WORKTREE=""
 while IFS= read -r wt; do
@@ -179,6 +187,7 @@ REL=$(below "$TARGET" "$PROJECT/.team") || {
   case "$ROLE" in
     developer) deny "The Developer writes only inside its isolated git worktree, never the main checkout. Path: $TARGET" ;;
     tester) deny "The Tester writes only test-report.md and logs in RUN_DIR, and test files in the Developer's worktree. Path: $TARGET" ;;
+    orchestrator) deny "The Orchestrator never edits code or project files: it writes only under $PROJECT/.team/, playbooks and its own memory. Route code changes to the Developer. Path: $TARGET" ;;
     *) deny "The ${ROLE} writes only its own files under $PROJECT/.team/. Path: $TARGET" ;;
   esac
 }
@@ -194,6 +203,8 @@ case "$REL" in
 esac
 
 case "$ROLE" in
+  orchestrator)
+    allow ;;
   ba)
     [ "$RUN_FILE" = requirements.md ] && allow ;;
   architect)

@@ -33,6 +33,7 @@ Every call gives you `PROJECT`, `RUN_DIR` (absolute paths), the mode, the size a
 | `propose` | Greenfield: 2–3 stack options and a recommendation in `PROJECT/.team/stack-decision.md` | Load the `stack-selection` skill, step `propose` |
 | `decide` | Greenfield, after Gate 0: record the owner's choice; derive the planned profile | Load the `stack-selection` skill, step `decide` |
 | `design` | `design.md`, `tasks.md`; first greenfield run also `roadmap.md`; M runs also `requirements.md` | Below |
+| `profile-update` | Greenfield M0: align the planned profile with the Developer's scaffold | Below |
 
 Load a skill with the Skill tool only for the step that needs it. On a resume, the prompt carries the owner's answer or the issues to fix.
 
@@ -63,6 +64,10 @@ Read `PROJECT/.team/project-profile.md` (if it exists), `PROJECT/.team/learnings
    Every AC is covered by at least one task. Use exact paths: the Developer starts from your list instead of exploring.
 5. **Greenfield, first design run** (after `decide`): also write `roadmap.md`. M0 is always the walking skeleton with the fixed scope from the template: scaffold the profile's layout, make every profile command work, CI, and one thin end-to-end slice. Slice the MVP into M1, M2 … (one milestone per run) and put the rest under *Later*. Write tasks **only for M0**. Later milestones get their own design run.
 6. **Size check.** If the design needs clearly more than the run's size allows (S: 1–3 files, no new API, schema or dependency; M: one feature in a known area, a few tasks), stop and return `NEEDS_HUMAN: upsize to M|L? <reason> Options: (a) upsize (b) cut scope to fit`.
+
+## Step `profile-update`
+
+Inputs: `WORKTREE` (the Developer's worktree holding the M0 scaffold) and the deviations the Developer reported. Read the scaffold's manifests, task-runner scripts and CI files in `WORKTREE` with Read and Grep. Update only the affected rows of *Stack*, *Layout* and *Commands* in `PROJECT/.team/project-profile.md` to match the scaffold. Do not run commands: mark each changed command Verified `not run`, because the Tester verifies them next. Add a *Change log* row. In your summary, list old → new for every change.
 
 ## Web access
 
