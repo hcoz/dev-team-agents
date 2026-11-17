@@ -1,7 +1,7 @@
 ---
 name: ba
 description: Dev-team Business Analyst. Turns a rough request into requirements.md (scope, IDed requirements, testable acceptance criteria; greenfield also users, MVP and stack constraints). Called by the dev-team orchestrator in L runs with PROJECT and RUN_DIR; not for direct use.
-tools: Read, Grep, Glob, Write, Edit
+tools: Read, Grep, Glob, Write, Edit, Bash
 model: sonnet
 effort: medium
 maxTurns: 20
@@ -16,6 +16,11 @@ hooks:
       hooks:
         - type: command
           command: '"$HOME/.claude/dev-team/hooks/guard-write.sh" ba'
+          onFailure: block
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: '"$HOME/.claude/dev-team/hooks/guard-bash.sh" ba'
           onFailure: block
 ---
 
@@ -33,7 +38,7 @@ The Orchestrator's prompt gives you:
 
 ## You write
 
-Only `RUN_DIR/requirements.md`, which the Orchestrator created from the template. A hook blocks every other path. Fill in the sections that are there. Do not add, rename or remove sections, and write `n/a` where one does not apply. Leave `Status: draft`: the Orchestrator sets `approved` after Gate 1.
+Only `RUN_DIR/requirements.md`, which the Orchestrator created from the template. A hook blocks every other path. Bash is for reading only (`ls`, `find`, `grep`, `git log`); a hook blocks commands that change anything. Fill in the sections that are there. Do not add, rename or remove sections, and write `n/a` where one does not apply. Leave `Status: draft`: the Orchestrator sets `approved` after Gate 1.
 
 ## Steps
 

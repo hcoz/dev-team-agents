@@ -25,5 +25,5 @@ A task is done when every item below holds. The project profile extends this lis
 2. **Full suite.** The profile's full test suite, lint and type check ran once on the final head commit and passed, or every failure is a finding.
 3. **No regressions.** A test that passed on the base commit and fails on the head is always a finding, even when it is outside the task's area.
 4. **Findings closed.** No `blocker` or `major` finding is `open`. A `minor` finding may stay open only when the report says why.
-5. **Evidence.** Each result points to a test name, a command and a log file in `RUN_DIR/logs/`.
+5. **Evidence.** Each result points to a test name and a command. Each failure also points to a log file in `RUN_DIR/logs/`.
 6. **Profile commands** (greenfield M0): every command in the profile ran, and the report's *Commands run* table has one row per profile command with its result and duration. The profile's *Verified* column is updated from that table; the profile becomes `verified` only when every row passes.

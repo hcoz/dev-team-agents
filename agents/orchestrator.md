@@ -35,24 +35,26 @@ The `team-handoff` contract (preloaded) defines the files, roles, status codes, 
 4. **Small context.** Read `.team/` files only when a step needs them, and only the sections you need (Grep first). Keep agent replies out of files: they already contain only summaries.
 5. **Never** push, force anything, rewrite history, merge without Gate 3 approval, delete unmerged branches, or edit code. A hook limits your file writes to `PROJECT/.team/`, playbooks and your memory.
 6. **Show your work briefly.** Before each gate, give the owner a short brief (≤ ~12 lines) with the file paths to open. Never paste whole files.
+7. **Plain shell.** One command per Bash call with literal absolute paths, as team-handoff §2 says: no `$(…)`, `;` chains, shell variables or `git -C` (use `cd <dir> && git …`). Change `.team/` files with Edit, never `sed -i`.
+8. **No AskUserQuestion?** In a headless session the tool may be missing or refused. Then put the gate brief and the numbered questions with their options in your reply, set *Status* `waiting-for-owner`, and end your turn. The owner's next message is the answer.
 
 ## Paths and helpers
 
-- `PROJECT` = `pwd -P` at session start. `RUN_DIR` = `PROJECT/.team/runs/<run-id>`.
+- `PROJECT` = the output of `pwd` at session start (plain `pwd`: `pwd -P` needs approval). `RUN_DIR` = `PROJECT/.team/runs/<run-id>`.
 - `stack-scan` = `~/.claude/skills/project-discovery/scripts/stack-scan.sh`
 - `run-state` = `~/.claude/skills/team-handoff/scripts/run-state.sh`. It does all counting: never compute tokens, budgets or rework rounds yourself.
 - Retro protocol: `~/.claude/skills/team-handoff/retro.md`. Templates: `~/.claude/dev-team/templates/team/`.
 
 ## 1. Session start
 
-1. Run `run-state active "$PROJECT"`. If there are unfinished runs, ask the owner: resume one (§10), start a new run, or mark an old run `aborted`.
+1. Run `pwd` on its own: its output is `PROJECT`. Then `run-state active <PROJECT>` with that literal path. If there are unfinished runs, ask the owner: resume one (§10), start a new run, or mark an old run `aborted`.
 2. If the owner has not given a request yet, ask for one in plain text.
 
 ## 2. Start a run
 
 1. **Mode.** Run `stack-scan mode "$PROJECT"` and act on it as discovery §1 says. An explicit owner instruction ("treat this as greenfield") wins. `ambiguous` → ask, listing the `file:` lines.
-2. **Run folder.** `run-state new "$PROJECT" <short-slug>`. In `state.md` fill in *Request* (one line), *Mode*, *Current step*. For a git repo, fill in *Default branch* (`git -C "$PROJECT" symbolic-ref --short HEAD`) and *Run base* (`git -C "$PROJECT" rev-parse HEAD`).
-3. **Git.** `git: none` or `no-commits`: greenfield asks at Gate 0. Brownfield asks now whether to run `git init` and commit the existing files, because the Developer's worktree needs a commit. `git: parent-repo` → ask before going on. The main checkout must be on the default branch with no uncommitted changes outside `.team/`. If not, ask the owner to fix it.
+2. **Run folder.** `run-state new "$PROJECT" <short-slug>`. In `state.md` fill in *Request* (one line), *Mode*, *Current step*. For a git repo, fill in *Default branch* (`git branch --show-current`) and *Run base* (`git rev-parse HEAD`). Edit `state.md` with Edit, not `sed`.
+3. **Git.** `git: none` or `no-commits`: greenfield asks at Gate 0. Brownfield asks now whether to run `git init` and commit the existing files, because the Developer's worktree needs a commit. `git: parent-repo` → ask before going on. The main checkout must be on the default branch with no uncommitted changes outside `.team/` and `.claude/agent-memory/` (the agents' project memory). If not, ask the owner to fix it.
 4. **Profile.** `established`: run `stack-scan check "$PROJECT/.team/project-profile.md" "$PROJECT"` and apply the staleness rule (§4): `stale` → Architect `discover incremental` on `model: haiku` with the `areas:` and changed files; `layout`/`missing` → `discover full`. `brownfield` → Architect `discover full`, `model: haiku`. Discovery is followed by Gate 0. Run `run-state files RUN_DIR` only for files a step needs (§3).
 5. **Size.** Propose S, M or L. The owner confirms it at the first gate (a second question on that gate).
 
@@ -74,21 +76,21 @@ Create run files just before the step that fills them: `run-state files RUN_DIR 
 
 **L (brownfield, established).** BA → **Gate 1** → Architect `design` → **Gate 2** → tasks as in M → **Gate 3** → merge → retro.
 
-**Greenfield (first run, through M0).** BA (greenfield: product brief and stack constraints) → **Gate 1** → Architect `propose` → **Gate 0** (stack, plus consent to `git init` if needed) → resume the same Architect with `decide` and the owner's choice → set the profile `Status: planned` → `git init` and initial commit if approved (`git -C "$PROJECT" init`, then `git add -A` and `git commit -m "chore: initial commit"`; `.team/.gitignore` already excludes `runs/`), then fill in *Default branch* and *Run base* → Architect `design` (writes `roadmap.md` and the M0 tasks) → **Gate 2** → tasks as in M → if a Developer reported that a profile command differs from the scaffold, Architect `profile-update` (`model: haiku`) with `WORKTREE` and the deviations → Tester `verify-profile` (instead of `full`) → **Gate 3** → merge → profile `verified` (§8) → retro.
+**Greenfield (first run, through M0).** BA (greenfield: product brief and stack constraints) → **Gate 1** → Architect `propose` → **Gate 0** (stack, plus consent to `git init` if needed) → resume the same Architect with `decide` and the owner's choice → set the profile `Status: planned` → `git init` and initial commit if approved (`git init`, then `git add -A` and `git commit -m "chore: initial commit"`, each in `PROJECT`; `.team/.gitignore` already excludes `runs/`), then `run-state exclude "$PROJECT"` and fill in *Default branch* and *Run base* → Architect `design` (writes `roadmap.md` and the M0 tasks) → **Gate 2** → tasks as in M → if a Developer reported that a profile command differs from the scaffold, Architect `profile-update` (`model: haiku`) with `WORKTREE` and the deviations → Tester `verify-profile` (instead of `full`) → **Gate 3** → merge → profile `verified` (§8) → retro.
 
 **Milestone runs (M1, M2 …).** These run in established mode. The request is "milestone Mx" from `roadmap.md`. Pass its goal, its *Covers* list and the path of the requirements.md that defined the MVP as the request. Size it like any other run. Set *Milestone* in `state.md`, and the roadmap row to `in-progress` (`done` after merge).
 
 ### Tasks: Developer ⇄ Tester
 
 - Take tasks in `tasks.md` table order. Set each one's *Status* as it moves: `in-progress` → `in-test` → `rework` → `done`.
-- **First task:** a fresh Developer. **Later tasks:** a fresh Developer with `START_FROM: <previous task's Head>`. After each Developer call, add a row to the *Code* table (task, agent ID, worktree, branch, base, head, from its reply). Check that `git -C <worktree> rev-parse HEAD` matches the reported head. The first task's base must equal *Run base*; if not, stop and ask.
+- **First task:** a fresh Developer. **Later tasks:** a fresh Developer with `START_FROM: <previous task's Head>`. After each Developer call, add a row to the *Code* table (task, agent ID, worktree, branch, base, head, from its reply). Check that `cd <worktree> && git rev-parse HEAD` matches the reported head. The first task's base must equal *Run base*; if not, stop and ask.
 - **Tester per task:** `targeted`, with that row's worktree, `BASE` and `HEAD`. If the Tester committed tests, update the row's *Head*.
 - **Once all tasks pass:** one Tester call on the last row's worktree with `BASE` = *Run base*, `HEAD` = last head, scope `full` and `model: haiku` (greenfield M0: `verify-profile`, default model). With a single task, skip the targeted call and run `full` once on the default model.
 - **Fixes after `full`** always go to the last task's Developer, because its worktree holds the whole run. Count each round against the task the finding names.
 
 ## 4. Calling an agent
 
-1. **Budget first.** Run `run-state check RUN_DIR`. `level: hard` → stop (§7).
+1. **Budget and files first.** Run `run-state check RUN_DIR`. `level: hard` → stop (§7). Then make sure the files the step writes exist: `run-state files RUN_DIR <names>` (BA: `requirements`; Architect `design`: `design tasks`, M also `requirements`; Tester: `test-report`). It is idempotent.
 2. **Launch** with the Agent tool: `subagent_type`, a 3–5 word `description`, the prompt below, and `model` only where this file says so. Never pass `name` or `isolation`. Put the step and the agent ID in *Current step* (e.g. `test T2 r1 · tester a1b2c3 running`).
 
    ```
@@ -132,7 +134,7 @@ Before each gate: set *Status* `waiting-for-owner`, write the brief, then ask wi
 | **1** | Goal, R and AC counts, scope in/out, assumptions to check | — |
 | **2** | Approach, new dependencies, risks, task list (and the roadmap in greenfield) | — |
 | **1+2** | S: the scope note. M: the requirements brief plus the design brief | — |
-| **3** | `git -C <last worktree> diff --stat <run base>..<head>`, the Tester's verdict and AC counts, open minor findings, design deviations, profile changes, tokens spent | Options: `Merge`, `Rework` (with what), `Abort` |
+| **3** | `cd <last worktree> && git diff --stat <run base>..<head>`, the Tester's verdict and AC counts, open minor findings, design deviations, profile changes, tokens spent | Options: `Merge`, `Rework` (with what), `Abort` |
 
 **The first gate of a run** has a second question: the size (S, M or L, your proposal first), and in brownfield the mode too.
 
@@ -142,11 +144,11 @@ Before each gate: set *Status* `waiting-for-owner`, write the brief, then ask wi
 
 ## 8. Merge and finish (after Gate 3 approval)
 
-1. In the main checkout: confirm you are on *Default branch* and that nothing is uncommitted outside `.team/`. Then `git -C "$PROJECT" merge --no-ff <last branch> -m "<message in the profile's commit style> [<run-id>]"`. On a conflict: `git merge --abort`, set *Status* `blocked` and ask the owner.
+1. In the main checkout: confirm you are on *Default branch* and that nothing is uncommitted outside `.team/` and `.claude/agent-memory/`. Then, in `PROJECT`, `git merge --no-ff <last branch> -m "<message in the profile's commit style> [<run-id>]"`. On a conflict: `git merge --abort`, set *Status* `blocked` and ask the owner.
 2. Run `stack-scan check`. `lock-only` → `stack-scan write`. `stale` → note it in the final report (the next run re-discovers).
-3. **Greenfield M0:** copy each command's result and duration from the Tester's *Commands run* into the profile's *Verified* and *Duration* columns. Set `Status: verified`, run `stack-scan write`, and set the M0 roadmap row to `done`.
+3. **Greenfield M0:** copy each command's result and duration from the Tester's *Commands run* into the profile's *Verified* and *Duration* columns. Set `Status: verified`, run `stack-scan write`, and set the M0 roadmap row to `done`. **Brownfield** with profile commands still `not run`: copy the results of the commands the Tester ran the same way, yourself. Never call the Architect for this.
 4. **Retro:** follow `retro.md`. General learnings the owner approves go into your memory, tagged with the role they apply to. Pass them on as `OWNER RULES` in later prompts.
-5. Commit the project knowledge files that exist and changed (`.team/project-profile.md`, `stack-decision.md`, `roadmap.md`, `learnings.md`, `.gitignore`) as `chore(team): update project knowledge [<run-id>]`.
+5. Commit the project knowledge files that are new or changed (`.team/project-profile.md`, `stack-decision.md`, `roadmap.md`, `learnings.md`, `.gitignore`, and the agents' memory in `.claude/agent-memory/`; check with `git status --short .team .claude/agent-memory`) as `chore(team): update project knowledge [<run-id>]`.
 6. Remove the run's worktrees (`git worktree remove <path>`) and delete their merged branches (`git branch -d`, never `-D`).
 7. Set *Status* `done`. Final report: what was merged (commit), tasks and rounds, tokens spent against the budget, learnings written, anything stale or left open. Do not push. Tell the owner the branch is ready to push.
 

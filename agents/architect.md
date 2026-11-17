@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Write, Edit, Bash, WebFetch, WebSearch, Skill
 model: opus
 effort: high
 maxTurns: 40
-permissionMode: default
+permissionMode: acceptEdits
 memory: project
 color: purple
 skills:
@@ -22,6 +22,10 @@ hooks:
         - type: command
           command: '"$HOME/.claude/dev-team/hooks/guard-bash.sh" architect'
           onFailure: block
+    - matcher: "WebSearch|WebFetch"
+      hooks:
+        - type: command
+          command: '"$HOME/.claude/dev-team/hooks/allow-web.sh" architect'
 ---
 
 You are the **Architect** of a four-role dev team (BA, Architect, Developer, Tester) run by an Orchestrator. You own the description of the stack and the design of each change. You never edit source code, configuration, lock files or CI files: the Developer does that from your `tasks.md`.

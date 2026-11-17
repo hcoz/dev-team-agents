@@ -2,7 +2,7 @@
 # guard-bash.sh: PreToolUse hook that blocks destructive or outward-facing shell commands for a
 # dev-team role, and asks the owner about borderline ones.
 #
-#   guard-bash.sh <role>        role: orchestrator | architect | developer | tester
+#   guard-bash.sh <role>        role: orchestrator | ba | architect | developer | tester
 #
 # Wired in each role's agent frontmatter for Bash, with onFailure: block. Reads the hook JSON on
 # stdin and checks tool_input.command:
@@ -33,11 +33,29 @@ ask() {
 }
 
 case "$ROLE" in
-  orchestrator|architect|developer|tester) ;;
-  *) deny "Unknown role '${ROLE}'. Usage: guard-bash.sh orchestrator|architect|developer|tester" ;;
+  orchestrator|ba|architect|developer|tester) ;;
+  *) deny "Unknown role '${ROLE}'. Usage: guard-bash.sh orchestrator|ba|architect|developer|tester" ;;
 esac
 
 INPUT=$(cat)
+# Opt-in trace for debugging and false-positive reviews: one JSON line per call.
+if [ -n "${DEV_TEAM_HOOK_LOG:-}" ]; then
+  printf '{"guard":"%s","role":"%s","input":%s}\n' "${0##*/}" "$ROLE" "$INPUT" >> "$DEV_TEAM_HOOK_LOG" 2>/dev/null || true
+fi
+
+# A session started with `claude --agent orchestrator` also runs the orchestrator's hooks for its
+# subagents' tool calls. Those calls carry agent_id and agent_type. Each team role has its own
+# guard, so the orchestrator's guard stays out of their calls (no output: no decision).
+if [ "$ROLE" = orchestrator ]; then
+  json_top() {
+    if command -v jq >/dev/null 2>&1; then printf '%s' "$INPUT" | jq -r --arg k "$1" '.[$k] // ""'
+    else printf '%s' "$INPUT" | python3 -I -c 'import json, sys; print(json.load(sys.stdin).get(sys.argv[1]) or "", end="")' "$1"
+    fi
+  }
+  if [ -n "$(json_top agent_id 2>/dev/null)" ]; then
+    case "$(json_top agent_type 2>/dev/null)" in ba|architect|developer|tester) exit 0 ;; esac
+  fi
+fi
 field() {
   if command -v jq >/dev/null 2>&1; then
     case "$1" in
@@ -192,12 +210,12 @@ while IFS= read -r call; do
         merge) case "$args" in *" --abort "*|*" --no-ff "*|*" --ff-only "*) ;; *) ask "git merge without --no-ff or --ff-only. Merges happen only after Gate 3." ;; esac ;;
         tag) deny "Tags are the owner's job." ;;
       esac ;;
-    architect)
+    architect|ba)
       case "$sub" in
         status|log|diff|show|ls-files|ls-tree|rev-parse|branch|blame|grep|describe|shortlog|cat-file|rev-list|merge-base|symbolic-ref|name-rev|for-each-ref|check-ignore|config|remote|worktree)
           case "$sub $args" in "branch "*" -"[dDmMcC]" "*|"branch "*" --delete"*|"branch "*" --move"*|"worktree "*" add "*|"worktree "*" remove "*|"worktree "*" prune "*)
-            deny "The Architect only reads git state." ;; esac ;;
-        *) deny "The Architect only reads git state (git $sub is not read-only)." ;;
+            deny "The ${ROLE} only reads git state." ;; esac ;;
+        *) deny "The ${ROLE} only reads git state (git $sub is not read-only)." ;;
       esac ;;
     developer)
       case "$sub" in
@@ -212,6 +230,7 @@ while IFS= read -r call; do
     tester)
       case "$sub" in
         status|log|diff|show|ls-files|rev-parse|blame|grep|describe|cat-file|rev-list|merge-base|add|commit) ;;
+        branch) case "$args" in *" -"[dDmMcC]" "*|*" --delete"*|*" --move"*|*" --copy"*|*" -f "*|*" --force"*) deny "The Tester does not change branches." ;; esac ;;
         *) deny "The Tester only reads git state and commits test files (git $sub is not allowed)." ;;
       esac
       case "$sub $args" in "commit "*" --amend"*) deny "Never amend: add a new test: commit." ;; esac ;;
@@ -222,8 +241,42 @@ EOF
 
 # --- Writes from the shell by roles that run in the main checkout ----------------------------------
 
+# Is a path a log, temp or null target (the only places these roles may write from the shell)?
+# Inside the project only RUN_DIR/logs counts, even when the project itself lives in a temp dir.
+log_or_temp() {
+  local p="$1"
+  case "$p" in /tmp/*) p="/private$p" ;; esac
+  case "$p" in
+    /dev/null|/dev/stdout|/dev/stderr|'&'*) return 0 ;;
+    *'/../'*|*'/..') return 1 ;;
+    *'/.team/runs/'*/logs|*'/.team/runs/'*/logs/*|*'$RUN_DIR'*|*'${RUN_DIR}'*) return 0 ;;
+    "$PROJECT_P"|"$PROJECT_P"/*|"$CWD_P"|"$CWD_P"/*) return 1 ;;
+    /private/tmp/*|/var/folders/*|'$TMPDIR'*|'${TMPDIR'*) return 0 ;;
+  esac
+  return 1
+}
+PROJECT_P="$PROJECT"; case "$PROJECT_P" in /tmp/*) PROJECT_P="/private$PROJECT_P" ;; esac
+CWD_P="$CWD"; case "$CWD_P" in /tmp/*) CWD_P="/private$CWD_P" ;; esac
+
 case "$ROLE" in
-  architect|tester)
+  ba|architect|tester)
+    # File-changing commands: acceptEdits would auto-approve them inside the project.
+    while IFS= read -r seg; do
+      set -- $seg
+      while [ $# -gt 0 ]; do case "$1" in *=*|'('|'{'|'!'|command|exec) shift ;; *) break ;; esac; done
+      [ $# -gt 0 ] || continue
+      case "${1##*/}" in
+        rm|rmdir|unlink|mv|cp|ln|touch|mkdir|chmod|chown|truncate|install|rsync|patch|tar|unzip)
+          verb="${1##*/}"; shift
+          for a in "$@"; do
+            case "$a" in -*|'>'*|'2>'*|'&>'*|[0-9]'>'*) continue ;; esac
+            a=$(printf '%s' "$a" | tr -d "\"'")
+            log_or_temp "$a" || deny "$verb may touch only RUN_DIR/logs/ or a temp dir from the shell (not '$a'). Write your own files with Write or Edit."
+          done ;;
+      esac
+    done <<SEGS
+$(segments)
+SEGS
     has "${B}(sed|perl|ruby)${A}-[A-Za-z]*i" \
       && deny "No in-place edits from the shell. Use Edit or Write, which are scoped to your files."
     # Redirect and tee targets must be logs, temp files or /dev/null.
@@ -235,15 +288,129 @@ case "$ROLE" in
     while IFS= read -r t; do
       [ -n "$t" ] || continue
       case "$t" in
-        /dev/null|/dev/stdout|/dev/stderr|'&'*) ;;
-        *'/.team/runs/'*/logs/*|*'$RUN_DIR'*|*'${RUN_DIR}'*) ;;
-        /tmp/*|/private/tmp/*|/var/folders/*|'$TMPDIR'*|'${TMPDIR'*) ;;
-        *) deny "Shell output may go only to RUN_DIR/logs/, a temp dir or /dev/null (not '$t'). Write files with Write or Edit." ;;
+        *) log_or_temp "$t" && continue
+           deny "Shell output may go only to RUN_DIR/logs/, a temp dir or /dev/null (not '$t'). Write files with Write or Edit." ;;
       esac
     done <<EOF
 $targets
 EOF
     ;;
 esac
+
+# --- Auto-allow: the plain git steps a role needs ------------------------------------------------
+# Claude Code asks before git writes, and before any git command that follows a `cd` into another
+# directory (its hooks and config could be untrusted). A background subagent cannot ask, so the step
+# would simply fail. This guard allows a short per-role list itself, scoped to the role, not to the
+# whole session as a settings rule would be, and only in this project's own repository (the main
+# checkout or one of its worktrees: same hooks and config). Only a plain chain qualifies: `cd <dir>`
+# and git steps joined by &&, no pipes, redirects, substitutions or -C. Anything else: normal flow.
+#   every role   read-only steps: status, diff, log, show, rev-parse, ls-files, merge-base, rev-list,
+#                blame, branch --show-current, worktree list
+#   developer  add, rm, mv, restore <files>, commit (no --amend), merge --ff-only; in a linked worktree
+#   tester     add, commit (no --amend); in a linked worktree
+#   orchestrator init, add, commit (no --amend), merge --no-ff|--ff-only|--abort, worktree remove,
+#              branch -d; in the main checkout (the gates approve these steps)
+
+allow_bash() {
+  local reason="guard-bash: plain git step owned by the $ROLE"
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"%s"}}\n' "$reason"
+  exit 0
+}
+
+# Physical path of an existing directory, or fail.
+dir_p() { (cd -P "$1" 2>/dev/null && pwd -P); }
+
+# Is DIR the project's main checkout or one of its worktrees (the same repository)?
+same_repo() {
+  local common pcommon
+  common=$(cd "$1" 2>/dev/null && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  pcommon=$(cd "$PROJECT" 2>/dev/null && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  [ "$(dir_p "$common")" = "$(dir_p "$pcommon")" ]
+}
+
+# May the role run git writes in DIR?
+git_place_ok() {
+  local dir="$1" common gitdir
+  same_repo "$dir" || return 1
+  common=$(cd "$dir" 2>/dev/null && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  gitdir=$(cd "$dir" 2>/dev/null && git rev-parse --absolute-git-dir 2>/dev/null) || return 1
+  case "$ROLE" in
+    developer|tester) [ "$(dir_p "$gitdir")" != "$(dir_p "$common")" ] ;;   # a linked worktree
+    orchestrator) [ "$(dir_p "$dir")" = "$(dir_p "$PROJECT")" ] ;;          # the main checkout
+    *) return 1 ;;
+  esac
+}
+
+auto_allow() {
+  local chain dir="$CWD" steps=0 seg sub rest
+  # Substitutions are never plain, not even inside double quotes.
+  printf '%s' "$CMD" | grep -Eq '`|\$\(|\$\{' && return 1
+  # Operators count only outside quotes: a commit message may hold < > ; | or line breaks.
+  # Inside quotes they become "_" and the quote marks go; a quote left open fails the check.
+  local plain
+  plain=$(printf '%s' "$CMD" | awk '
+    { s = s (NR > 1 ? "\n" : "") $0 }
+    END {
+      q = ""; out = ""
+      for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1)
+        if (q == "") {
+          if (c == "\047" || c == "\"") q = c; else out = out c
+        } else if (q == "\"" && c == "\\") {
+          i++; out = out "_"
+        } else if (c == q) {
+          q = ""
+        } else {
+          out = out (index("|;<>&\n", c) ? "_" : c)
+        }
+      }
+      if (q != "") out = out ";"
+      printf "%s", out
+    }')
+  case "$plain" in *"
+"*) return 1 ;; esac
+  chain=$(printf '%s' "$plain" | awk '{ gsub(/&&/, "\n"); print }')
+  printf '%s' "$chain" | grep -Eq "[|;<>&]|^[[:space:]]*$" && return 1
+  while IFS= read -r seg; do
+    seg=$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+    [ -n "$seg" ] || return 1
+    set -- $seg
+    case "$1" in
+      cd)
+        [ $# -eq 2 ] || return 1
+        dir="$2"
+        case "$dir" in /*) ;; *) dir="$CWD/$dir" ;; esac
+        [ -d "$dir" ] || return 1 ;;
+      git)
+        shift; sub="${1:-}"; [ -n "$sub" ] && shift; rest=" $* "
+        case "$rest" in *" -C "*|*" -c "*|*" --git-dir"*|*" --work-tree"*|*" --amend"*|*" --force"*|*" -f "*|*" --no-verify"*) return 1 ;; esac
+        steps=1
+        case "$sub:$rest" in
+          status:*|diff:*|log:*|show:*|rev-parse:*|ls-files:*|merge-base:*|rev-list:*|blame:*|"branch: --show-current "|"worktree: list "*)
+            same_repo "$dir" || return 1
+            continue ;;
+        esac
+        case "$ROLE:$sub" in
+          developer:add|developer:rm|developer:mv|developer:restore|developer:commit|tester:add|tester:commit|orchestrator:add|orchestrator:commit|orchestrator:init) ;;
+          developer:merge) case "$rest" in " --ff-only "*) ;; *) return 1 ;; esac ;;
+          orchestrator:merge) case "$rest" in " --no-ff "*|" --ff-only "*|" --abort ") ;; *) return 1 ;; esac ;;
+          orchestrator:worktree) case "$rest" in " remove "*) ;; *) return 1 ;; esac ;;
+          orchestrator:branch) case "$rest" in " -d "*) ;; *) return 1 ;; esac ;;
+          *) return 1 ;;
+        esac
+        if [ "$sub" = init ]; then
+          [ "$(dir_p "$dir")" = "$(dir_p "$PROJECT")" ] || return 1
+        else
+          git_place_ok "$dir" || return 1
+        fi ;;
+      *) return 1 ;;
+    esac
+  done <<CHAIN
+$chain
+CHAIN
+  [ "$steps" = 1 ]
+}
+
+auto_allow && allow_bash
 
 exit 0

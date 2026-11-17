@@ -27,7 +27,7 @@ Run `stack-scan mode "$PROJECT"` and act on its `mode:` line:
 
 Inputs from the Orchestrator: `PROJECT`, `RUN_DIR`, scope `full`. You write only `$PROJECT/.team/project-profile.md` (from the template) and logs. Never edit source code, configuration or lock files.
 
-1. **Map the repo.** `git -C "$PROJECT" ls-files | head -200`, a depth-2 directory listing, and `stack-scan fingerprint "$PROJECT"`. The fingerprint lists every file that defines the stack, by category.
+1. **Map the repo.** `cd <PROJECT> && git ls-files | head -200`, a depth-2 directory listing, and `stack-scan fingerprint "$PROJECT"`. The fingerprint lists every file that defines the stack, by category.
 2. **Check the playbooks.** For each detected stack, read `~/.claude/dev-team/playbooks/<stack>.md` if it exists. It lists what to look for and known pitfalls.
 3. **Stack.** From the manifests and toolchain files, record languages and runtime versions, frameworks with versions, and the package manager. The lock file decides the package manager (`pnpm-lock.yaml` means pnpm, `uv.lock` means uv, and so on). For a monorepo, add one row per app or package and name the workspace tool.
 4. **Commands.** Take them from these sources, in this order:
@@ -39,11 +39,11 @@ Inputs from the Orchestrator: `PROJECT`, `RUN_DIR`, scope `full`. You write only
    Record each command exactly, with its working directory. For tests, record both the full-suite command and the **targeted** form (one file or one test), because the Tester relies on the targeted form. Note the services and env var *names* that tests need (never read secret values; only note that `.env` files exist).
 5. **Conventions.** Read 3–5 existing tests and a few typical source files for layout, naming, fixtures and error handling. Run `git log --oneline -30` and `git branch -a` for commit and branch conventions. Read the PR template if there is one.
 6. **Risky areas.** Look for migrations, generated code (note the command that regenerates it), secrets and `.env*` files, vendored code, infrastructure files and public API contracts.
-7. **Verify.** Run `git status --porcelain` first. Then run each recorded command once, in this order: install → build → lint → type check → targeted test → full test suite. Wrap each in `timeout` (default 600s). Send output to `$RUN_DIR/logs/architect-discover-r0.log`, and record the result and duration in the *Verified* column.
+7. **Verify.** Run `git status --porcelain` first. Then run each recorded command once, in this order: install → build → lint → type check → targeted test → full test suite. Set the Bash tool's timeout to 600000 ms for each (there is no `timeout` command on macOS). Send output to `RUN_DIR/logs/architect-discover-r0.log`, and record the result and duration in the *Verified* column.
    - Only run commands that are safe. A safe command does not modify tracked files and does not touch remote systems: no deploys, no migrations against non-local databases, no publishing. For install, prefer the frozen or lockfile form (`npm ci`, `pnpm install --frozen-lockfile`, `uv sync --frozen`, `bundle install` with frozen mode).
    - Mark any command you skipped as `not run`, with the reason.
    - If `git status --porcelain` shows a change after a command, stop running commands. Do not revert anything. Record the change under *Open issues* and report it.
-8. **Write the profile.** Set `Origin: discovered` and leave `Status: draft`, because the Orchestrator sets it after Gate 0. Put failed commands and open questions under *Open issues*. Fill in `Last discovery` and add a *Change log* row. Then run `stack-scan write "$PROJECT/.team/project-profile.md" "$PROJECT"`.
+8. **Write the profile.** Record only what stays true across ordinary feature work: directories and patterns, not single test files; commands, not test counts or timings beyond a rough duration. Set `Origin: discovered` and leave `Status: draft`, because the Orchestrator sets it after Gate 0. Put failed commands and open questions under *Open issues*. Fill in `Last discovery` and add a *Change log* row. Then run `stack-scan write "$PROJECT/.team/project-profile.md" "$PROJECT"`.
 9. **Reply** using the hand-off format. List any failed or skipped commands in the summary.
 
 ## 3. Incremental re-discovery (Architect)

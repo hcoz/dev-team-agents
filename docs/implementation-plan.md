@@ -1,6 +1,6 @@
 # dev-team-agents — Implementation Plan
 
-Status: **Final** · Date: 2026-11-16 (rev. 2026-11-17: cost controls) · Language: English (all repo content)
+Status: **Final** · Date: 2026-11-16 (rev. 2026-11-17: cost controls; Phase 6 results) · Language: English (all repo content)
 
 ## 1. Goal
 
@@ -181,8 +181,9 @@ dev-team-agents/
 │   └── definition-of-done/SKILL.md  # generic DoD, extended by the project profile
 ├── playbooks/                       # optional, grows over time (e.g. python-flask.md)
 ├── hooks/
-│   ├── guard-bash.sh                # blocks/asks on destructive or outward-facing commands
-│   └── guard-write.sh               # limits each role's writes to its allowed paths
+│   ├── guard-bash.sh                # blocks/asks on destructive or outward-facing commands; allows plain per-role git steps
+│   ├── guard-write.sh               # limits each role's writes to its allowed paths
+│   └── allow-web.sh                 # Architect only: allows web lookups up to a cap
 ├── templates/team/                  # skeletons for .team/ files in target projects
 │   ├── project-profile.md
 │   ├── stack-decision.md
@@ -200,6 +201,7 @@ dev-team-agents/
 │   └── uninstall.sh
 └── docs/
     ├── implementation-plan.md       # this file
+    ├── e2e-dry-run-notes.md         # Phase 6 results, costs and findings
     └── design-decisions.md
 ```
 
@@ -276,7 +278,8 @@ Commit conventions: Conventional Commits, one commit per phase minimum, small fo
 | Run state | One folder per request under `.team/runs/`, with `state.md` | Runs do not overwrite each other and can resume after interruption |
 | BA/Architect permissions | No source edits; writes limited to `.team/` by hook | They must write their own hand-off files, which a fully read-only mode would prevent |
 | Install method | Symlink, copy fallback | Repo updates propagate instantly; whether Claude Code loads symlinked agent files is checked on the first live run |
-| Settings snippet | Budgets (env) and allow rules for the team's scripts only; no deny rules | User-level deny rules would also restrict the owner's own sessions; the per-role guard hooks cover the agents |
+| Settings snippet | Budgets (env), allow rules for the team's scripts, and the install's directories as `additionalDirectories` (plus the repo's real path for a symlink install); no deny rules | User-level deny rules would also restrict the owner's own sessions; the per-role guard hooks cover the agents. Permission checks resolve symlinks |
+| Role-scoped approvals | The guard hooks grant the few approvals a role needs (plain git steps in the right checkout, the Architect's web lookups) | Background subagents cannot show a permission prompt, and settings allow rules would apply to the owner's own sessions too |
 | Distribution | Plain user-level files, not a plugin (for now) | Plugin agents ignore `hooks`, `mcpServers`, `permissionMode`, which the safety design needs |
 | Rework loop | Orchestrator-relayed, max 3 rounds per task and 8 per run | Subagents report only to their caller; keeps cost predictable |
 | Request sizing | S / M / L proposed by the Orchestrator, confirmed by the owner; S and M skip or merge steps and gates | Small changes should not pay for the full pipeline |
@@ -306,26 +309,32 @@ Commit conventions: Conventional Commits, one commit per phase minimum, small fo
 | First prompts are imperfect | Plan 1–2 prompt-tuning iterations after Phase 6 |
 
 ## 9. To verify during implementation
-- Whether symlinks inside `~/.claude/agents/` are picked up reliably (else copy).
-- ~~Install must provide `~/.claude/dev-team/` and keep the scripts executable~~ Done in Phase 5: `install.sh` links `templates/`, `playbooks/` and `hooks/` there and sets the executable bit on every shipped script (tested on a fake clean home, in link and copy mode).
-- Exact `memory: project` / `memory: user` behavior and file locations.
-- `claude --agent orchestrator` behavior with a restricted `Agent(...)` tool list, and that the Orchestrator waits for background subagents' completion notifications instead of acting early.
-- Hook behavior for subagent-defined `PreToolUse` hooks in practice, including path-based write restriction for BA/Architect/Tester.
-- Whether the `skills:` preload keeps agent prompts small enough.
-- `isolation: worktree` in a repo that was just initialized (empty repo, single initial commit).
-- ~~How the Tester reaches the Developer's worktree, and how rework continues~~ Decided in Phase 4: the Tester gets the worktree's absolute path; rework resumes the same Developer via `SendMessage`; each later task gets a fresh Developer with `START_FROM`; the last task's branch is merged. Confirm in Phase 6.
-- Whether the Architect's web access gives reliable current-version information for stack proposals.
-- Whether subagent `effort` frontmatter and per-call `model` overrides behave as expected (e.g. a cheap model for Architect discovery).
-- ~~Whether the Agent tool result's token figures support budget checks~~ Answered in Phase 4: no. `totalTokens` covers only the final API request, and a background launch returns no usage at all. `run-state.sh usage` sums every request in `~/.claude/projects/*/*/subagents/agent-<id>.jsonl` instead (deduplicated by message ID; resumed runs counted by delta). Verify the transcript path and that resumes append to the same file. The Orchestrator's own spend is not counted yet.
-- Cost of resuming the Developer for rework vs. starting it cold, measured in Phase 6.
-- Agent frontmatter calls `~/.claude/dev-team/hooks/guard-write.sh` and `guard-bash.sh` with `onFailure: block`, so a missing script blocks every write or command. Needs Claude Code v2.1.295+ (`install.sh` warns on older versions) and the config dir at `~/.claude` (`install.sh` warns otherwise).
-- `guard-bash.sh` is text-based: it can over-block (a pattern inside a quoted string) and cannot see through `sh -c`, `eval` or scripts. Note false positives and misses in Phase 6.
-- `isolation: worktree` branches from the default branch, not `HEAD`. Phase 4 picked a fresh Developer per task with `START_FROM` (fast-forward); measure its cost against one resumed Developer per run in Phase 6.
-- Default budgets in `run-state.sh` (S 0.6M/1.2M, M 1.5M/3M, L 4M/8M input-token equivalents) are guesses until the Phase 6 baselines.
-- Where `memory: project` writes for the worktree-isolated Developer (main checkout or worktree), and that the Developer can append logs to `RUN_DIR/logs/` from inside its worktree.
-- `guard-write.sh` relies on `CLAUDE_PROJECT_DIR` being the main checkout inside subagents; confirm it in a live run. Writes through Bash redirection are not covered by it (that is `guard-bash.sh`).
-- The Tester's test-file rule is a filename/directory heuristic; check it against the Phase 6 stacks.
-- Architect and Tester use `permissionMode: default`, so project commands prompt unless settings allow them. Read-only git and file commands are already in Claude Code's built-in read-only set; the settings snippet adds only the team's two scripts. Project test commands are approved per project ("don't ask again" saves them to that repo's `.claude/settings.local.json`). Count the prompts per run in Phase 6. A parent session in `acceptEdits`, auto or bypass mode overrides every agent's `permissionMode`.
+
+Phase 6 answered most of these; details and figures are in [e2e-dry-run-notes.md](e2e-dry-run-notes.md).
+
+Answered:
+- **Symlinked agents and skills** load fine. Permission checks resolve symlinks, though, so a linked install needs the repo's real path in `additionalDirectories` (`install.sh --with-settings` adds it).
+- **Install** provides `~/.claude/dev-team/` with executable scripts (Phase 5).
+- **Memory:** `memory: project` writes `<project>/.claude/agent-memory/<role>/` in the main checkout, also for the worktree Developer, and is committed with the knowledge files. `memory: user` writes `~/.claude/agent-memory/<role>/`.
+- **`claude --agent orchestrator`** works with the restricted `Agent(...)` list and waits for background agents (verified in print mode). Its frontmatter hooks also run for its subagents' calls, so its guards stand aside for calls that carry a team role's `agent_id`/`agent_type`.
+- **Subagent `PreToolUse` hooks** fire. Hook input carries `agent_id`, `agent_type`, `permission_mode` and `cwd`; path-based write restriction works.
+- **`isolation: worktree`** works in a just-initialized repo. Worktrees live in `<project>/.claude/worktrees/` and are kept out of `git status` via `.git/info/exclude`.
+- **Tester and rework hand-off:** the Tester works from the main checkout with `cd <worktree> && …`; `SendMessage` resumes the same Developer with its context; the `START_FROM` chain gave linear history over 3 and 5 tasks.
+- **Web access:** background agents cannot get approval for web tools; `hooks/allow-web.sh` allows them for the Architect only. One stack proposal used 13 lookups and checked versions down to wheel availability.
+- **Per-call `model` overrides** work (Haiku for discovery and the full test pass). `effort` was not measured separately.
+- **Usage measurement:** the transcript path `~/.claude/projects/*/<session>/subagents/agent-<id>.jsonl` is right, resumes append to the same file, and delta counting works. The Orchestrator's own spend is 35–55% on top and is **not** counted yet.
+- **Resume vs cold:** resuming a Developer cost 24k against 50–130k for a fresh call.
+- **`guard-bash.sh`** blocked nothing legitimate after the fixes, and no quoted-string false positives or misses were seen (no destructive command was attempted).
+- **Default budgets and `maxTurns`** are set from the baselines: budgets S 400k/800k, M 1.0M/2.0M, L 2.5M/5M; `maxTurns` Developer 50, Tester 30 (BA 20 and Architect 40 unchanged).
+- **`CLAUDE_PROJECT_DIR`** is the main checkout inside subagents. Writes through Bash redirection are limited by `guard-bash.sh`.
+- **The Tester's test-file heuristic** matched `test/*.test.js` and `tests/test_*.py`.
+- **Permission prompts:** the Architect and Tester now run in `acceptEdits`, with shell writes fenced by `guard-bash.sh`. After the fixes a run hit 0–2 denials, all from the Orchestrator's first commands. Project commands still need one-time allow rules per project.
+
+Still open:
+- **Interactive sessions:** whether background agents' permission requests reach the owner, and gates through `AskUserQuestion` (Phase 6 ran headless only).
+- **Count the Orchestrator's spend** in the budgets.
+- **Re-run one L scenario** after the prompt fixes and compare its cost with the first run.
+- `onFailure: block` needs Claude Code v2.1.295+ and the config dir at `~/.claude` (`install.sh` warns otherwise).
 
 ## 10. Out of scope (v0.1.0)
 Agent-teams mode, plugin packaging, CI/headless runner, additional roles (DevOps, security reviewer, tech writer, UI/UX designer), automated deployment of greenfield projects. These can be added as new `agents/*.md` files without changing the core.

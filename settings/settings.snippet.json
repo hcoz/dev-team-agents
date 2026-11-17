@@ -1,16 +1,23 @@
 {
   "env": {
-    "DEV_TEAM_BUDGET_S_SOFT": "600000",
-    "DEV_TEAM_BUDGET_S_HARD": "1200000",
-    "DEV_TEAM_BUDGET_M_SOFT": "1500000",
-    "DEV_TEAM_BUDGET_M_HARD": "3000000",
-    "DEV_TEAM_BUDGET_L_SOFT": "4000000",
-    "DEV_TEAM_BUDGET_L_HARD": "8000000"
+    "DEV_TEAM_BUDGET_S_SOFT": "400000",
+    "DEV_TEAM_BUDGET_S_HARD": "800000",
+    "DEV_TEAM_BUDGET_M_SOFT": "1000000",
+    "DEV_TEAM_BUDGET_M_HARD": "2000000",
+    "DEV_TEAM_BUDGET_L_SOFT": "2500000",
+    "DEV_TEAM_BUDGET_L_HARD": "5000000"
   },
   "permissions": {
     "allow": [
       "Bash(~/.claude/skills/project-discovery/scripts/stack-scan.sh *)",
       "Bash(~/.claude/skills/team-handoff/scripts/run-state.sh *)"
+    ],
+    "additionalDirectories": [
+      "~/.claude/dev-team",
+      "~/.claude/skills/team-handoff",
+      "~/.claude/skills/project-discovery",
+      "~/.claude/skills/stack-selection",
+      "~/.claude/skills/definition-of-done"
     ]
   }
 }

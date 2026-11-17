@@ -4,7 +4,7 @@ description: Dev-team Developer. Implements one task from tasks.md (or an S-run 
 tools: Read, Grep, Glob, Write, Edit, Bash
 model: sonnet
 effort: medium
-maxTurns: 80
+maxTurns: 50
 permissionMode: acceptEdits
 isolation: worktree
 memory: project
@@ -49,7 +49,7 @@ You run in an **isolated git worktree**: your working directory. It was branched
 
 1. **Read.** Your task's section in `RUN_DIR/tasks.md` (S runs: *Scope note* in `RUN_DIR/state.md`); the parts of `RUN_DIR/design.md` the task depends on; in `PROJECT/.team/project-profile.md` the *Commands*, *Code conventions*, *Promoted rules*, *Test conventions* and *Risky areas*; `PROJECT/.team/learnings.md`. Start from *Files to touch* and *Entry points*. Read beyond them only when you must, and say why in your summary.
 2. **Implement** the smallest change that meets *Done when*. Follow the design and the surrounding code's patterns. Add or update tests at the level the design names. If the design is wrong or cannot be built as written, stop and return `BLOCKED: design — <what and why>`. Do not redesign on your own.
-3. **Check.** Run the profile's format check, lint, type check and the **targeted** tests for what you touched, from the worktree, each wrapped in `timeout 600`. Send the output to `RUN_DIR/logs/developer-<task>-r<round>.log` (`>>` for later commands). If the shell refuses that path, use `${TMPDIR:-/tmp}/dev-team/<run-id>/` and give the path in your summary. Read failures from the log with `tail` or `grep`. Do not load whole logs. Fix and re-run until they pass. Do not run the full suite: the Tester does that.
+3. **Check.** Run the profile's format check, lint, type check and the **targeted** tests for what you touched, from the worktree, each with the Bash tool's timeout set to 600000 ms. Send the output to `RUN_DIR/logs/developer-<task>-r<round>.log` (`>>` for later commands). If the shell refuses that path, use `/tmp/dev-team/<run-id>/` and give the path in your summary. Read failures from the log with `tail` or `grep`. Do not load whole logs. Fix and re-run until they pass. Do not run the full suite: the Tester does that.
 4. **Commit** on your branch, in small commits in the profile's commit style, until `git status --porcelain` is empty, except for files under `.claude/agent-memory/`, which you never commit.
 5. **Rework.** For each finding ID, read it in `RUN_DIR/test-report.md`, reproduce it with its steps or test, fix it, and re-run the affected targeted tests. Commit with the ID in the message (e.g. `fix: reject expired tokens (F2)`). If you think a finding is wrong, do not change the code: mark it *disputed* and cite the requirement or AC.
 

@@ -43,6 +43,24 @@ case "$ROLE" in
 esac
 
 INPUT=$(cat)
+# Opt-in trace for debugging and false-positive reviews: one JSON line per call.
+if [ -n "${DEV_TEAM_HOOK_LOG:-}" ]; then
+  printf '{"guard":"%s","role":"%s","input":%s}\n' "${0##*/}" "$ROLE" "$INPUT" >> "$DEV_TEAM_HOOK_LOG" 2>/dev/null || true
+fi
+
+# A session started with `claude --agent orchestrator` also runs the orchestrator's hooks for its
+# subagents' tool calls. Those calls carry agent_id and agent_type. Each team role has its own
+# guard, so the orchestrator's guard stays out of their calls (no output: no decision).
+if [ "$ROLE" = orchestrator ]; then
+  json_top() {
+    if command -v jq >/dev/null 2>&1; then printf '%s' "$INPUT" | jq -r --arg k "$1" '.[$k] // ""'
+    else printf '%s' "$INPUT" | python3 -I -c 'import json, sys; print(json.load(sys.stdin).get(sys.argv[1]) or "", end="")' "$1"
+    fi
+  }
+  if [ -n "$(json_top agent_id 2>/dev/null)" ]; then
+    case "$(json_top agent_type 2>/dev/null)" in ba|architect|developer|tester) exit 0 ;; esac
+  fi
+fi
 
 # Print one field of the hook input: cwd, or the target path of a file tool.
 field() {
@@ -155,7 +173,10 @@ done
 # Orchestrator: user-level knowledge (playbooks, its own user memory).
 if [ "$ROLE" = orchestrator ]; then
   CFG=$(physical "${CLAUDE_CONFIG_DIR:-$HOME/.claude}") || deny "Cannot resolve the Claude config dir."
-  REL=$(below "$TARGET" "$CFG/dev-team/playbooks") && case "$REL" in */*) ;; *.md) allow ;; esac
+  # TARGET is a physical path, so compare with the physical playbooks dir (a symlink install).
+  PLAYBOOKS=$(physical "$CFG/dev-team/playbooks") || PLAYBOOKS="$CFG/dev-team/playbooks"
+  [ -d "$PLAYBOOKS" ] && PLAYBOOKS=$(cd -P "$PLAYBOOKS" && pwd -P)
+  REL=$(below "$TARGET" "$PLAYBOOKS") && case "$REL" in */*) ;; *.md) allow ;; esac
   below "$TARGET" "$CFG/agent-memory/orchestrator" >/dev/null && allow
 fi
 

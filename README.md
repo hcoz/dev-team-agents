@@ -7,7 +7,7 @@ You give the team a rough request. It analyzes, designs, implements and tests th
 - **Greenfield:** in an empty directory, the team proposes a tech stack for you to approve.
 - **Brownfield:** in an existing codebase, the team discovers the stack and conventions for you to confirm.
 
-> **Status:** early development (Phase 5 done: install script and guard hooks). Installable, not yet validated end to end.
+> **Status:** early development (Phase 6 done: end-to-end dry-runs, see [docs/e2e-dry-run-notes.md](docs/e2e-dry-run-notes.md)). Validated headless on Node and Python projects and one greenfield project.
 
 ## Install
 
@@ -16,8 +16,10 @@ Requires Claude Code 2.1.295 or later, `git`, and `jq` or `python3`.
 ```sh
 git clone <this repo> && cd dev-team-agents
 scripts/install.sh                  # symlinks into ~/.claude (use --copy to copy instead)
-scripts/install.sh --with-settings  # also merge default budgets and script allow rules into ~/.claude/settings.json
+scripts/install.sh --with-settings  # also merge default budgets, script allow rules and the install's directories into ~/.claude/settings.json
 ```
+
+Use `--with-settings` unless you add the same entries yourself. The team's subagents run in the background and cannot ask for permission, so without `additionalDirectories` they cannot read the templates and playbooks. For the same reason, approve each project's install, lint and test commands once ("don't ask again") or add allow rules for them in the project's `.claude/settings.local.json`.
 
 Then, in a project directory: `claude --agent orchestrator`. Anything the installer would overwrite is moved to `~/.claude/dev-team-backups/` first. `scripts/uninstall.sh` reverses the install and restores those files. Both scripts take `--dry-run`.
 

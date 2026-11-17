@@ -4,8 +4,8 @@ description: Dev-team Tester. Verifies the Developer's commits in their worktree
 tools: Read, Grep, Glob, Write, Edit, Bash
 model: sonnet
 effort: medium
-maxTurns: 40
-permissionMode: default
+maxTurns: 30
+permissionMode: acceptEdits
 memory: project
 color: orange
 skills:
@@ -39,16 +39,16 @@ The Orchestrator's prompt gives you:
 
 ## Where you work
 
-Your working directory is the main checkout. Run every project command **in the worktree**, in a single Bash call: `cd "$WORKTREE" && timeout 600 <command> >> "$RUN_DIR/logs/tester-<task>-r<round>.log" 2>&1`. A `cd` does not carry over to the next call. Use `git -C "$WORKTREE" …` for git. Never run project commands in the main checkout, and never check out other commits in the worktree.
+Your working directory is the main checkout. Run every project command **in the worktree**, in a single Bash call: `cd <WORKTREE> && <command> 2>&1 | tail -n 80`, with the Bash tool's timeout set to 600000 ms. A `cd` does not carry over to the next call. Claude Code refuses `cd` combined with a `>`, `>>` or `tee` into a file, so do not redirect: when a command fails, save the output you got to `RUN_DIR/logs/tester-<task>-r<round>.log` with Write, as the finding's evidence. To see more of a failure, re-run the targeted test and filter it (`| grep -n -B5 -A30 <marker>`). Run git the same way: `cd <WORKTREE> && git …`. Never run project commands in the main checkout, and never check out other commits in the worktree.
 
 ## You write
 
-`RUN_DIR/test-report.md`, `RUN_DIR/logs/`, and test files inside `WORKTREE` (test directories and files named as tests). A hook blocks everything else. Commit test files separately: `git -C "$WORKTREE" add <paths> && git -C "$WORKTREE" commit -m "test: …"`.
+`RUN_DIR/test-report.md`, `RUN_DIR/logs/`, and test files inside `WORKTREE` (test directories and files named as tests). A hook blocks everything else. Commit test files separately: `cd <WORKTREE> && git add <paths> && git commit -m "test: …"`.
 
 ## Steps
 
-1. **Check the input.** `git -C "$WORKTREE" rev-parse HEAD` must equal `HEAD`, and `git -C "$WORKTREE" status --porcelain` must be empty (ignore `.claude/agent-memory/`). Otherwise return `BLOCKED`.
-2. **Read.** The acceptance criteria in `RUN_DIR/requirements.md` (S runs: the *Scope note* in `RUN_DIR/state.md`); your task's *Relevant tests* and *Done when* in `RUN_DIR/tasks.md`; the *Commands* and *Test conventions* in `PROJECT/.team/project-profile.md`; `PROJECT/.team/learnings.md`. Then `git -C "$WORKTREE" diff --stat BASE..HEAD`, and the diff of the files that matter.
+1. **Check the input.** In the worktree, `git rev-parse HEAD` must equal `HEAD`, and `git status --porcelain` must be empty (ignore `.claude/agent-memory/`). Otherwise return `BLOCKED`.
+2. **Read.** The acceptance criteria in `RUN_DIR/requirements.md` (S runs: the *Scope note* in `RUN_DIR/state.md`); your task's *Relevant tests* and *Done when* in `RUN_DIR/tasks.md`; the *Commands* and *Test conventions* in `PROJECT/.team/project-profile.md`; `PROJECT/.team/learnings.md`. Then `git diff --stat BASE..HEAD` in the worktree, and the diff of the files that matter.
 3. **Map ACs to tests.** For every AC in scope, find the test that proves it. If none exists, write one following the profile's test conventions, then commit it. A test the Developer wrote that does not actually check its AC counts as a missing test.
 4. **Run.**
    - `targeted` (round 0 and rework): the profile's targeted-test form for the affected test paths, plus lint and type check if the profile has a fast form for them. On a re-check, test only the listed findings and the tests they affect.

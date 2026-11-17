@@ -6,7 +6,9 @@
 #   --copy           Copy files instead of symlinking them (symlinks are the default; a failed
 #                    symlink falls back to a copy automatically).
 #   --with-settings  Also merge settings/settings.snippet.json into settings.json: default budgets
-#                    (env) and allow rules for the team's scripts. Existing values are kept.
+#                    (env), allow rules for the team's scripts, and the install's directories as
+#                    additionalDirectories (plus this repo's real path when linking), so background
+#                    agents can read templates and playbooks. Existing values are kept.
 #   --dry-run        Print what would change, change nothing.
 #
 # Installs:
@@ -162,17 +164,21 @@ fi
 
 SNIPPET="$REPO/settings/settings.snippet.json"
 SETTINGS="$CFG/settings.json"
-settings_note="not changed (use --with-settings to merge the snippet)"
+settings_note="not changed. Without --with-settings, background agents cannot read the templates and playbooks (see README)"
 if [ "$WITH_SETTINGS" = 1 ]; then
   command -v jq >/dev/null 2>&1 || { echo "error: --with-settings needs jq" >&2; exit 1; }
   current='{}'
   [ -f "$SETTINGS" ] && current=$(cat "$SETTINGS")
-  merged=$(jq -n --argjson cur "$current" --slurpfile snip "$SNIPPET" '
+  # Permission checks resolve symlinks, so a linked install also needs the repo's real path.
+  repo_dir=""; [ "$MODE" = link ] && repo_dir="$REPO"
+  merged=$(jq -n --argjson cur "$current" --slurpfile snip "$SNIPPET" --arg repo "$repo_dir" '
     $snip[0] as $s
-    | $cur
+    | def addall($xs): reduce $xs[] as $x (. // []; if any(.[]; . == $x) then . else . + [$x] end);
+    $cur
     | .env = (($s.env // {}) + (.env // {}))
-    | .permissions.allow = (reduce ($s.permissions.allow // [])[] as $r
-        ((.permissions.allow // []); if any(.[]; . == $r) then . else . + [$r] end))')
+    | .permissions.allow = (.permissions.allow | addall($s.permissions.allow // []))
+    | .permissions.additionalDirectories = (.permissions.additionalDirectories
+        | addall(($s.permissions.additionalDirectories // []) + (if $repo == "" then [] else [$repo] end)))')
   if [ "$merged" = "$(printf '%s' "$current" | jq .)" ]; then
     settings_note="already contains the snippet"
   else

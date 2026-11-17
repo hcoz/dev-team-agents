@@ -2,6 +2,7 @@
 # run-state.sh: deterministic bookkeeping for a dev-team run (Orchestrator only).
 #
 #   run-state.sh new PROJECT SLUG                 Create .team/runs/<run-id>/ with state.md and logs/.
+#   run-state.sh exclude PROJECT                  Keep .claude/worktrees/ out of git status (after git init).
 #   run-state.sh files RUN_DIR NAME...            Add run files from templates if missing
 #                                                 (requirements design tasks test-report).
 #   run-state.sh active PROJECT                   List unfinished runs (active, waiting-for-owner, blocked).
@@ -113,6 +114,22 @@ is_number() { case "${1:-}" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac; }
 
 # --- Commands -----------------------------------------------------------------------------------
 
+# Agent worktrees live in .claude/worktrees/: keep them out of git status, locally only
+# (.git/info/exclude, not the project's .gitignore). No-op outside a git repo.
+exclude_worktrees() {
+  local exclude
+  exclude=$(cd "$1" && git rev-parse --git-path info/exclude 2>/dev/null) || return 0
+  case "$exclude" in /*) ;; *) exclude="$1/$exclude" ;; esac
+  mkdir -p "$(dirname "$exclude")"
+  grep -qx '/.claude/worktrees/' "$exclude" 2>/dev/null || echo '/.claude/worktrees/' >> "$exclude"
+}
+
+cmd_exclude() {
+  [ -d "${1:-}" ] || die "usage: exclude PROJECT"
+  exclude_worktrees "$1"
+  echo "excluded: /.claude/worktrees/"
+}
+
 cmd_new() {
   local project="${1:-}" slug="${2:-}"
   [ -d "$project" ] || die "usage: new PROJECT SLUG (PROJECT must exist)"
@@ -143,6 +160,7 @@ cmd_new() {
   if ! grep -qx 'runs/' "$team/.gitignore" 2>/dev/null; then
     echo 'runs/' >> "$team/.gitignore"
   fi
+  exclude_worktrees "$project"
 
   echo "run_id: $id"
   echo "run_dir: $run"
@@ -183,9 +201,9 @@ cmd_active() {
 
 default_budget() {
   case "$1-$2" in
-    S-soft) echo 600000 ;;  S-hard) echo 1200000 ;;
-    M-soft) echo 1500000 ;; M-hard) echo 3000000 ;;
-    L-soft) echo 4000000 ;; L-hard) echo 8000000 ;;
+    S-soft) echo 400000 ;;  S-hard) echo 800000 ;;
+    M-soft) echo 1000000 ;; M-hard) echo 2000000 ;;
+    L-soft) echo 2500000 ;; L-hard) echo 5000000 ;;
   esac
 }
 
@@ -381,6 +399,7 @@ cmd_rework() {
 cmd="${1:-}"; shift || true
 case "$cmd" in
   new) cmd_new "$@" ;;
+  exclude) cmd_exclude "$@" ;;
   files) cmd_files "$@" ;;
   active) cmd_active "$@" ;;
   budget) cmd_budget "$@" ;;
@@ -388,5 +407,5 @@ case "$cmd" in
   ack-soft) cmd_ack_soft "$@" ;;
   usage) cmd_usage "$@" ;;
   rework) cmd_rework "$@" ;;
-  *) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

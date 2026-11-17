@@ -66,14 +66,19 @@ while IFS="	" read -r kind target src; do
       if ! command -v jq >/dev/null 2>&1; then
         settings_note="not changed: jq is needed to remove the snippet's entries"; continue
       fi
-      cleaned=$(jq --slurpfile snip "$snippet" '
+      cleaned=$(jq --slurpfile snip "$snippet" --arg repo "$REPO" '
         $snip[0] as $s
+        | (($s.permissions.additionalDirectories // []) + [$repo]) as $dirs
         | if .env then .env |= with_entries(select(.key as $k | ($s.env[$k] // null) != .value)) else . end
         | if .env == {} then del(.env) else . end
         | if .permissions.allow then
             .permissions.allow |= map(select(. as $r | any(($s.permissions.allow // [])[]; . == $r) | not))
           else . end
         | if .permissions.allow == [] then del(.permissions.allow) else . end
+        | if .permissions.additionalDirectories then
+            .permissions.additionalDirectories |= map(select(. as $d | any($dirs[]; . == $d) | not))
+          else . end
+        | if .permissions.additionalDirectories == [] then del(.permissions.additionalDirectories) else . end
         | if .permissions == {} then del(.permissions) else . end' "$target")
       if [ "$cleaned" = "$(jq . "$target")" ]; then
         settings_note="no snippet entries found"

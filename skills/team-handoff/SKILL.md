@@ -19,7 +19,7 @@ Every role follows this contract. State lives in files, not in conversation: if 
 
 - `<run-id>` is `YYYY-MM-DD-<short-slug>`, e.g. `2026-11-16-add-auth`. If the folder exists, add `-2`, `-3` …
 - `~/.claude/dev-team/` is the dev-team-agents install. It holds `templates/team/` and `playbooks/`.
-- The Orchestrator creates the run folder and every run file from the templates. Other roles fill in the sections already there. They do not add, rename or remove sections. A section that does not apply gets `n/a`.
+- The Orchestrator creates the run folder and every run file from the templates. If a file you own is missing anyway, create it from `~/.claude/dev-team/templates/team/<name>.md` (replace `<run-id>`) and say so in your reply; do not stop. Other roles fill in the sections already there. They do not add, rename or remove sections. A section that does not apply gets `n/a`.
 - Every call from the Orchestrator gives two absolute paths: `PROJECT` (the main checkout) and `RUN_DIR`. Always read and write `.team/` through these paths. The Developer's worktree has no `.team/runs/` (it is git-ignored), so never use a relative `.team/` path inside a worktree.
 
 ## 2. Roles: inputs and outputs
@@ -39,7 +39,12 @@ Rules for every role:
 - **Write only the files you own.** If someone else's file needs a change, say so in your reply. The Orchestrator routes it.
 - **Use the commands in `project-profile.md`.** Never guess build or test commands. If a command is missing or broken, return `BLOCKED`.
 - **Read narrowly.** Start from what `tasks.md` lists (files to touch, entry points, tests). Go beyond that only when you need to, and say why in your reply.
-- **Logs go to files.** Write long command output to `RUN_DIR/logs/<role>-<task-or-step>-r<round>.log`, e.g. `tester-T2-r1.log`. Never paste it into a reply.
+- **Logs go to files.** Write long command output to `RUN_DIR/logs/<role>-<task-or-step>-r<round>.log`, e.g. `tester-T2-r1.log`. Never paste it into a reply. A redirect works only for commands run in your own working directory; in another directory (`cd <dir> && …`), pipe through `| tail -n 80` instead and save what matters with Write.
+- **Plain shell commands.** One command per Bash call (a leading `cd <dir> &&` and a log redirect are fine), with literal absolute paths. `PROJECT`, `RUN_DIR` and `WORKTREE` are values to paste in, not shell variables. No `$(…)`, backticks, `;` chains or loops: the permission check cannot verify them and asks the owner, which stalls the run.
+  - git in another directory: `cd <dir> && git …`. `git -C <dir> …` always asks for approval, even for read-only commands.
+  - The Bash tool reports a non-zero exit code by itself: never append `; echo $?` or `|| true`.
+  - Long commands: set the Bash tool's own timeout (up to 600000 ms). Do not use the `timeout` command: macOS does not have it.
+  - If your session has no Grep or Glob tool, use `grep`, `find` and `ls` through Bash.
 
 ## 3. Code hand-off
 
