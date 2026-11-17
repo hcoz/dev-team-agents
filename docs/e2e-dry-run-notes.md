@@ -53,6 +53,7 @@ Observations:
 - **Resume is cheap.** Resuming the Developer to commit in place cost 24k, against 50–130k for a fresh Developer call.
 - **Peak requests per agent call:** Architect 32 (`maxTurns` 40), BA 6 (20), Developer 20 (80 → **50**), Tester 11 (40 → **30**).
 - **New default budgets** (subagent spend, in `run-state.sh` and the settings snippet): S 400k / 800k, M 1.0M / 2.0M, L 2.5M / 5M, down from 0.6M/1.2M, 1.5M/3M and 4M/8M. Each is set from one or two runs, so refine them at later retros.
+- **Update (after Phase 6):** the budgets now count the Orchestrator too, so the defaults were raised to S 750k / 1.5M, M 1.8M / 3.6M, L 4M / 8M. With the Orchestrator included, the runs above total S 351k–718k (971k for the inflated run 1), M 1.17M and L 1.99M–2.58M. All except run 1 stay under the new soft budgets.
 
 ## 4. Findings and fixes
 
@@ -91,12 +92,12 @@ Real guard blocks across all scenarios: 8 by the Orchestrator's guard on Develop
 | Greenfield ends with a verified profile and a passing skeleton | **Met.** 30 tests; the server was started by hand at Gate 3 (`/health` 200, `/auth/register` 201). |
 | A follow-up request on that project runs as Established | **Met** (6b) |
 | Learnings written correctly | **Met.** Project entries in `learnings.md`, approved general rules in `~/.claude/agent-memory/orchestrator/` (passed on as `OWNER RULES` in a later project), approved stack rule in a playbook (after fix #18). |
-| Every run stays within its hard budget | **Met** for counted (subagent) spend. The Orchestrator's spend is not counted. |
+| Every run stays within its hard budget | **Met** for counted (subagent) spend. The Orchestrator's spend was not counted then; it is now, against raised defaults (§3 update). |
 | An S run costs ≤ 25% of an L run | **Met:** 12% (18% with the Orchestrator) |
 | Re-running one L scenario after the prompt fixes is no more expensive than its first run | **Not measured.** The L and M runs (3, 4, 5) already ran after the fixes that changed agent behavior (#1–#13). A re-run is the first thing to do in the prompt-tuning iteration. |
 
 Open items carried forward:
 - **Interactive mode is untested.** Check whether background agents' permission requests surface to the owner, and run the gates through `AskUserQuestion`.
-- **Count the Orchestrator's spend in the budgets.** `run-state.sh` needs the main session's transcript path, which the Orchestrator does not know today.
+- ~~**Count the Orchestrator's spend in the budgets.**~~ Done after Phase 6: `run-state.sh` finds the session transcript through `CLAUDE_CODE_SESSION_ID` and counts it on every `budget`, `usage`, `check` and `ack-soft` call.
 - **Cross-project rules cost tokens.** An approved general rule ("re-fetch partial WebFetch pages") pushed the next stack proposal to 13 lookups. It was narrowed at the gate. Watch rule growth at retros.
 - **Brownfield discovery commands still need allow rules** in the project (e.g. `npm ci`, `make install`). Without them, discovery records commands as `not run` and the Tester verifies them later.

@@ -58,17 +58,23 @@ Caps: 3 rounds per task, 8 per run.
 
 ## Budget
 
-<!-- Written by run-state.sh. Tokens are input-token equivalents, summed from the subagent transcripts:
-     input + 1.25 × cache writes + 0.1 × cache reads + 5 × output. Roughly proportional to cost on one model. -->
+<!-- Written by run-state.sh. Tokens are input-token equivalents, summed from the subagent transcripts and
+     the Orchestrator's own session transcript(s): input + 1.25 × cache writes + 0.1 × cache reads + 5 × output.
+     Roughly proportional to cost on one model. Spent so far = Subagents + Orchestrator; the budgets apply to it. -->
 
 | | Tokens |
 |---|---|
 | Soft budget | <from profile, settings or defaults> |
 | Hard budget | <from profile, settings or defaults> |
 | Spent so far | 0 |
+| Subagents | 0 |
+| Orchestrator | 0 |
 | Soft budget acknowledged | no |
 
 ## Usage log
+
+<!-- One row per agent call, plus one "orchestrator" row per Orchestrator session (keyed by the session ID's
+     first 8 characters), which run-state.sh updates in place as the run goes on. -->
 
 | # | Time | Agent | Agent ID | Step | Model | Tokens | Duration | Rework round | Status |
 |---|---|---|---|---|---|---|---|---|---|

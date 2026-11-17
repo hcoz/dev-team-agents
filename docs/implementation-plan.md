@@ -1,6 +1,6 @@
 # dev-team-agents — Implementation Plan
 
-Status: **Final** · Date: 2026-11-16 (rev. 2026-11-17: cost controls; Phase 6 results) · Language: English (all repo content)
+Status: **Final** · Date: 2026-11-16 (rev. 2026-11-17: cost controls; Phase 6 results; Orchestrator spend counted) · Language: English (all repo content)
 
 ## 1. Goal
 
@@ -127,7 +127,8 @@ Cost is controlled at four levels: how much of the workflow runs, how much each 
 - An S run skips the retro unless an agent reported a candidate learning.
 
 **2. Budgets and measurement.**
-- After every agent call the Orchestrator appends a row to `state.md`: agent, step, model, tokens, duration, rework round. The Agent tool result reports these figures.
+- After every agent call the Orchestrator appends a row to `state.md`: agent, step, model, tokens, duration, rework round. `run-state.sh` sums the figures from the agent's transcript.
+- **All spend counts, the Orchestrator's included.** `run-state.sh` also reads the Orchestrator's own session transcript (`CLAUDE_CODE_SESSION_ID`) and keeps one usage-log row per Orchestrator session, counting only requests made since the run started. The budgets apply to the total: subagents + Orchestrator.
 - Each run has a **soft** and a **hard** token budget per size. Defaults live in `settings/settings.snippet.json`; `project-profile.md` can override them. At the soft budget the Orchestrator shows the spend so far and asks before continuing. At the hard budget it stops and escalates.
 - Rework caps: max 3 rounds per task **and** max 8 rounds per run, then escalate.
 - Default budgets are set from the Phase 6 baselines and refined at each retro.
@@ -286,7 +287,7 @@ Commit conventions: Conventional Commits, one commit per phase minimum, small fo
 | Cost budgets | Usage logged per agent call in `state.md`; soft budget asks, hard budget stops | Cost becomes visible and bounded, not just "acceptable" |
 | Model tiering | Strongest model only for the Architect's design and stack decisions; mid tier for most roles; cheap tier for discovery and log triage | Spend goes where mistakes are most expensive; the highest-volume roles stay on the mid tier |
 | Agent replies | Short summary + file paths + status code; content lives in `.team/` | Keeps the long-lived Orchestrator context small |
-| Usage measurement | Summed from subagent transcripts by `run-state.sh`, in input-token equivalents (input + 1.25 × cache writes + 0.1 × cache reads + 5 × output) | The Agent result reports only the final request; raw totals are dominated by cheap cache reads |
+| Usage measurement | Summed by `run-state.sh` from the subagent transcripts **and** the Orchestrator's own session transcript, in input-token equivalents (input + 1.25 × cache writes + 0.1 × cache reads + 5 × output); budgets apply to the total | The Agent result reports only the final request; raw totals are dominated by cheap cache reads; the Orchestrator adds 35–55% (up to ~120% on small runs) and must not be a hidden cost |
 | Multi-task runs | Fresh Developer per task, starting from the previous task's head; rework resumes the same Developer | Keeps each Developer's context small; the last branch holds the whole run |
 
 ## 8. Risks and mitigations
@@ -322,17 +323,18 @@ Answered:
 - **Tester and rework hand-off:** the Tester works from the main checkout with `cd <worktree> && …`; `SendMessage` resumes the same Developer with its context; the `START_FROM` chain gave linear history over 3 and 5 tasks.
 - **Web access:** background agents cannot get approval for web tools; `hooks/allow-web.sh` allows them for the Architect only. One stack proposal used 13 lookups and checked versions down to wheel availability.
 - **Per-call `model` overrides** work (Haiku for discovery and the full test pass). `effort` was not measured separately.
-- **Usage measurement:** the transcript path `~/.claude/projects/*/<session>/subagents/agent-<id>.jsonl` is right, resumes append to the same file, and delta counting works. The Orchestrator's own spend is 35–55% on top and is **not** counted yet.
+- **Usage measurement:** the transcript path `~/.claude/projects/*/<session>/subagents/agent-<id>.jsonl` is right, resumes append to the same file, and delta counting works.
+- **Orchestrator spend** is now counted: Bash commands see `CLAUDE_CODE_SESSION_ID`, and the main transcript is `~/.claude/projects/*/<session-id>.jsonl` in the same format. `run-state.sh` counts that session's requests since the run started (sidechain records excluded; one seen-list per run, so a resumed or forked session is not counted twice).
 - **Resume vs cold:** resuming a Developer cost 24k against 50–130k for a fresh call.
 - **`guard-bash.sh`** blocked nothing legitimate after the fixes, and no quoted-string false positives or misses were seen (no destructive command was attempted).
-- **Default budgets and `maxTurns`** are set from the baselines: budgets S 400k/800k, M 1.0M/2.0M, L 2.5M/5M; `maxTurns` Developer 50, Tester 30 (BA 20 and Architect 40 unchanged).
+- **Default budgets and `maxTurns`** are set from the baselines: budgets (subagents + Orchestrator) S 750k/1.5M, M 1.8M/3.6M, L 4M/8M, raised from the subagent-only S 400k/800k, M 1.0M/2.0M, L 2.5M/5M; `maxTurns` Developer 50, Tester 30 (BA 20 and Architect 40 unchanged).
 - **`CLAUDE_PROJECT_DIR`** is the main checkout inside subagents. Writes through Bash redirection are limited by `guard-bash.sh`.
 - **The Tester's test-file heuristic** matched `test/*.test.js` and `tests/test_*.py`.
 - **Permission prompts:** the Architect and Tester now run in `acceptEdits`, with shell writes fenced by `guard-bash.sh`. After the fixes a run hit 0–2 denials, all from the Orchestrator's first commands. Project commands still need one-time allow rules per project.
 
 Still open:
 - **Interactive sessions:** whether background agents' permission requests reach the owner, and gates through `AskUserQuestion` (Phase 6 ran headless only).
-- **Count the Orchestrator's spend** in the budgets.
+- **Orchestrator counting in a live `claude --agent orchestrator` session:** verified on a real session transcript and with test fixtures, not yet in a team run. Check the `orchestrator` row in the next run's `state.md`.
 - **Re-run one L scenario** after the prompt fixes and compare its cost with the first run.
 - `onFailure: block` needs Claude Code v2.1.295+ and the config dir at `~/.claude` (`install.sh` warns otherwise).
 

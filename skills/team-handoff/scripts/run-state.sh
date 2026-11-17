@@ -13,16 +13,22 @@
 #                                                 Add a usage-log row for one finished agent call, from the
 #                                                 subagent transcript; then print the budget check.
 #   run-state.sh check RUN_DIR                    Print the budget check.
+#
+# The Orchestrator's own spend is counted too. Every budget, usage, check and ack-soft call adds the
+# new requests of the calling session (CLAUDE_CODE_SESSION_ID) made since the run started, to one
+# usage-log row per session. Set DEV_TEAM_COUNT_SESSION=0 to skip this (e.g. when running the script
+# by hand from a session that is not the run's Orchestrator).
 #   run-state.sh ack-soft RUN_DIR                 Record that the owner chose to continue past the soft budget.
 #   run-state.sh rework RUN_DIR TASK [--force]    Start a rework round for TASK if both caps allow it.
 #
-# Budget check output: "spent: N", "soft: N", "hard: N", "level: ok|soft|hard".
+# Budget check output: "spent: N", "subagents: N", "orchestrator: N", "soft: N", "hard: N",
+#   "level: ok|soft|hard". spent = subagents + orchestrator.
 #   soft = soft budget reached and not yet acknowledged; hard = hard budget reached.
 # Tokens are input-token equivalents: input + 1.25 x cache writes + 0.1 x cache reads + 5 x output,
-# summed over every API request in the agent's transcript that was not counted before.
+# summed over every API request in a transcript that was not counted before.
 #
 # Exit codes: 0 ok, 2 usage or input error, 3 rework cap reached. Works with macOS bash 3.2.
-# Needs jq or python3 for "usage".
+# Needs jq or python3 to count tokens (usage, and the Orchestrator's spend in budget, check, ack-soft).
 
 set -euo pipefail
 export LC_ALL=C
@@ -110,6 +116,26 @@ table_rows() {
   ' "$1"
 }
 
+# log_get FILE AGENT ID: print the Tokens cell of the usage-log row for AGENT and ID.
+log_get() {
+  awk -v a="$2" -v id="$3" -F'|' '
+    function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+    /^## / { insec = ($0 == "## Usage log"); next }
+    insec && /^\|/ && trim($4) == a && trim($5) == id { print trim($8); exit }
+  ' "$1"
+}
+
+# log_set FILE AGENT ID ROW: replace the usage-log row for AGENT and ID with ROW.
+log_set() {
+  local tmp="$1.tmp.$$"
+  awk -v a="$2" -v id="$3" -v row="$4" -F'|' '
+    function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+    /^## / { insec = ($0 == "## Usage log") }
+    insec && !done && /^\|/ && trim($4) == a && trim($5) == id { print row; done = 1; next }
+    { print }
+  ' "$1" > "$tmp" && mv "$tmp" "$1"
+}
+
 is_number() { case "${1:-}" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac; }
 
 # --- Commands -----------------------------------------------------------------------------------
@@ -143,7 +169,8 @@ cmd_new() {
   id="$base"
   while [ -e "$team/runs/$id" ]; do id="$base-$n"; n=$((n + 1)); done
   local run="$team/runs/$id"
-  mkdir -p "$run/logs"
+  mkdir -p "$run/logs" "$run/.usage"
+  date +%s > "$run/.usage/started"
 
   sed -e "s/<run-id>/$id/g" -e "s/<YYYY-MM-DD-slug>/$id/g" "$TEMPLATES/state.md" > "$run/state.md"
   # The header table sits above the first "##": set Created and Status directly.
@@ -201,9 +228,9 @@ cmd_active() {
 
 default_budget() {
   case "$1-$2" in
-    S-soft) echo 400000 ;;  S-hard) echo 800000 ;;
-    M-soft) echo 1000000 ;; M-hard) echo 2000000 ;;
-    L-soft) echo 2500000 ;; L-hard) echo 5000000 ;;
+    S-soft) echo 750000 ;;  S-hard) echo 1500000 ;;
+    M-soft) echo 1800000 ;; M-hard) echo 3600000 ;;
+    L-soft) echo 4000000 ;; L-hard) echo 8000000 ;;
   esac
 }
 
@@ -226,21 +253,127 @@ resolve_budget() {
   default_budget "$size" "$kind"
 }
 
+num_or_zero() { if is_number "${1:-}"; then echo "$1"; else echo 0; fi; }
+
+# Older state.md files have only "Spent so far": add the Subagents and Orchestrator rows.
+ensure_budget_rows() {
+  local state="$1" spent
+  if [ -z "$(table_get "$state" "## Budget" "Subagents")" ]; then
+    spent=$(num_or_zero "$(table_get "$state" "## Budget" "Spent so far")")
+    table_add "$state" "## Budget" "" "| Subagents | $spent |" "Soft budget acknowledged"
+  fi
+  if [ -z "$(table_get "$state" "## Budget" "Orchestrator")" ]; then
+    table_add "$state" "## Budget" "" "| Orchestrator | 0 |" "Soft budget acknowledged"
+  fi
+}
+
+# add_spend STATE ROW TOKENS: add TOKENS to the Budget row ROW (Subagents|Orchestrator), then set
+# Spent so far = Subagents + Orchestrator.
+add_spend() {
+  local state="$1" sub orch
+  local cur; cur=$(num_or_zero "$(table_get "$state" "## Budget" "$2")")
+  table_set "$state" "## Budget" "$2" "$((cur + $3))"
+  sub=$(num_or_zero "$(table_get "$state" "## Budget" "Subagents")")
+  orch=$(num_or_zero "$(table_get "$state" "## Budget" "Orchestrator")")
+  table_set "$state" "## Budget" "Spent so far" "$((sub + orch))"
+}
+
 budget_check() {
-  local state="$1" spent soft hard ack level=ok
-  spent=$(table_get "$state" "## Budget" "Spent so far")
+  local state="$1" spent sub orch soft hard ack level=ok
+  spent=$(num_or_zero "$(table_get "$state" "## Budget" "Spent so far")")
+  sub=$(num_or_zero "$(table_get "$state" "## Budget" "Subagents")")
+  orch=$(num_or_zero "$(table_get "$state" "## Budget" "Orchestrator")")
   soft=$(table_get "$state" "## Budget" "Soft budget")
   hard=$(table_get "$state" "## Budget" "Hard budget")
   ack=$(table_get "$state" "## Budget" "Soft budget acknowledged")
-  is_number "$spent" || spent=0
+  echo "spent: $spent"; echo "subagents: $sub"; echo "orchestrator: $orch"
   if ! is_number "$soft" || ! is_number "$hard"; then
-    echo "spent: $spent"; echo "soft: unset"; echo "hard: unset"; echo "level: unset"
+    echo "soft: unset"; echo "hard: unset"; echo "level: unset"
     return
   fi
   if [ "$spent" -ge "$hard" ]; then level=hard
   elif [ "$spent" -ge "$soft" ] && [ "$ack" != yes ]; then level=soft
   fi
-  echo "spent: $spent"; echo "soft: $soft"; echo "hard: $hard"; echo "level: $level"
+  echo "soft: $soft"; echo "hard: $hard"; echo "level: $level"
+}
+
+# count_new TRANSCRIPT SEEN_FILE SINCE: sum the requests in TRANSCRIPT that SEEN_FILE does not list
+# and that started at or after epoch SINCE, and add their ids to SEEN_FILE.
+# Prints: tokens <TAB> duration <TAB> model <TAB> requests.
+count_new() {
+  touch "$2"
+  transcript_requests "$1" | awk -F'\t' -v seen="$2" -v since="${3:-0}" '
+    BEGIN { while ((getline l < seen) > 0) done[l] = 1; close(seen) }
+    !($1 in done) && $3 >= since {
+      n++; model = $2
+      if (t0 == "" || $3 < t0) t0 = $3
+      if ($4 > t1) t1 = $4
+      tok += $5 + 1.25 * $6 + 0.1 * $7 + 5 * $8
+      print $1 >> seen
+    }
+    END {
+      d = (n ? t1 - t0 : 0)
+      printf "%d\t%dm%02ds\t%s\t%d\n", tok + 0.5, int(d / 60), d % 60, (model == "" ? "?" : model), n + 0
+    }'
+}
+
+# Count the calling session's (the Orchestrator's) new requests since the run started, into one
+# usage-log row per session and the Budget's Orchestrator row. Warns once per session if it cannot.
+sync_orchestrator() {
+  local run="$1" state="$2" sid="${CLAUDE_CODE_SESSION_ID:-}" transcript="" f since result tokens model n
+  [ "${DEV_TEAM_COUNT_SESSION:-1}" != 0 ] || return 0
+  mkdir -p "$run/.usage"
+  if [ -z "$sid" ]; then
+    if [ ! -f "$run/.usage/no-session.warned" ]; then
+      echo "warning: CLAUDE_CODE_SESSION_ID is not set; the Orchestrator's own spend is not counted" >&2
+      touch "$run/.usage/no-session.warned"
+    fi
+    return 0
+  fi
+  case "$sid" in *[!A-Za-z0-9_-]*) echo "warning: bad session id; Orchestrator spend not counted" >&2; return 0 ;; esac
+  for f in "$CFG"/projects/*/"$sid".jsonl; do
+    [ -f "$f" ] && transcript="$f"
+  done
+  if [ -z "$transcript" ]; then
+    if [ ! -f "$run/.usage/$sid.warned" ]; then
+      echo "warning: no transcript for session $sid under $CFG/projects; Orchestrator spend not counted" >&2
+      touch "$run/.usage/$sid.warned"
+    fi
+    return 0
+  fi
+  since=$(num_or_zero "$(cat "$run/.usage/started" 2>/dev/null || true)")
+  # One seen file for all sessions: a resumed or forked session repeats the earlier message ids.
+  result=$(count_new "$transcript" "$run/.usage/orchestrator.seen" "$since")
+  tokens=$(printf '%s' "$result" | cut -f1)
+  model=$(printf '%s' "$result" | cut -f3)
+  n=$(printf '%s' "$result" | cut -f4)
+  [ "$n" -gt 0 ] || return 0
+
+  local short="${sid:0:8}" old row
+  old=$(log_get "$state" orchestrator "$short")
+  if is_number "$old"; then
+    row="| $(log_row_number "$state" "$short") | $(date +%H:%M) | orchestrator | $short | own turns (session) | $model | $((old + tokens)) | — | — | session |"
+    log_set "$state" orchestrator "$short" "$row"
+  else
+    row="| $(( $(table_rows "$state" "## Usage log" "#") + 1 )) | $(date +%H:%M) | orchestrator | $short | own turns (session) | $model | $tokens | — | — | session |"
+    table_add "$state" "## Usage log" "#" "$row"
+  fi
+  add_spend "$state" Orchestrator "$tokens"
+}
+
+# Print the # cell of the Orchestrator's usage-log row for session SHORT.
+log_row_number() {
+  awk -v id="$2" -F'|' '
+    function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+    /^## / { insec = ($0 == "## Usage log"); next }
+    insec && /^\|/ && trim($4) == "orchestrator" && trim($5) == id { print trim($2); exit }
+  ' "$1"
+}
+
+# Bring the Budget section up to date: migrate old rows, count the Orchestrator's new requests.
+refresh() {
+  ensure_budget_rows "$2"
+  sync_orchestrator "$1" "$2"
 }
 
 cmd_budget() {
@@ -256,17 +389,21 @@ cmd_budget() {
   [ "$soft" -le "$hard" ] || die "soft budget ($soft) is above hard budget ($hard)"
   table_set "$state" "## Budget" "Soft budget" "$soft"
   table_set "$state" "## Budget" "Hard budget" "$hard"
+  refresh "$run" "$state"
   budget_check "$state"
 }
 
 cmd_ack_soft() {
   local state; state=$(state_of "${1:-}")
   table_set "$state" "## Budget" "Soft budget acknowledged" "yes"
+  refresh "$1" "$state"
   budget_check "$state"
 }
 
 cmd_check() {
-  budget_check "$(state_of "${1:-}")"
+  local state; state=$(state_of "${1:-}")
+  refresh "$1" "$state"
+  budget_check "$state"
 }
 
 # Print one TSV line per API request: message id, model, first epoch, last epoch, in, cache write,
@@ -275,7 +412,8 @@ transcript_requests() {
   if command -v jq >/dev/null 2>&1; then
     jq -rs '
       def epoch: sub("\\.[0-9]+"; "") | sub("Z$"; "Z") | fromdateiso8601;
-      [ .[] | select(.type == "assistant" and .message.id != null and .message.usage != null) ]
+      [ .[] | select(.type == "assistant" and .isSidechain != true
+                     and .message.id != null and .message.usage != null) ]
       | group_by(.message.id)[]
       | [ .[0].message.id,
           (.[-1].message.model // "?"),
@@ -298,7 +436,7 @@ for line in open(sys.argv[1], encoding="utf-8"):
     except ValueError:
         continue
     m = d.get("message") or {}
-    if d.get("type") != "assistant" or not m.get("id") or not m.get("usage"):
+    if d.get("type") != "assistant" or d.get("isSidechain") or not m.get("id") or not m.get("usage"):
         continue
     ts = datetime.fromisoformat(d["timestamp"].replace("Z", "+00:00")).timestamp()
     r = reqs.get(m["id"])
@@ -333,22 +471,10 @@ cmd_usage() {
 
   local seen_dir="$run/.usage" tokens="?" duration="?" model="?"
   mkdir -p "$seen_dir"
+  ensure_budget_rows "$state"
   if [ -n "$transcript" ]; then
-    local seen="$seen_dir/$id.seen" result
-    touch "$seen"
-    result=$(transcript_requests "$transcript" | awk -F'\t' -v seen="$seen" '
-      BEGIN { while ((getline l < seen) > 0) done[l] = 1 }
-      !($1 in done) {
-        n++; model = $2
-        if (t0 == "" || $3 < t0) t0 = $3
-        if ($4 > t1) t1 = $4
-        tok += $5 + 1.25 * $6 + 0.1 * $7 + 5 * $8
-        print $1 >> seen
-      }
-      END {
-        d = (n ? t1 - t0 : 0)
-        printf "%d\t%dm%02ds\t%s\t%d\n", tok + 0.5, int(d / 60), d % 60, (model == "" ? "?" : model), n
-      }')
+    local result
+    result=$(count_new "$transcript" "$seen_dir/$id.seen" 0)
     tokens=$(printf '%s' "$result" | cut -f1)
     duration=$(printf '%s' "$result" | cut -f2)
     model=$(printf '%s' "$result" | cut -f3)
@@ -356,14 +482,12 @@ cmd_usage() {
     echo "warning: no transcript found for agent $id under $CFG/projects; tokens not counted" >&2
   fi
 
-  local n spent
+  local n
   n=$(( $(table_rows "$state" "## Usage log" "#") + 1 ))
   table_add "$state" "## Usage log" "#" \
     "| $n | $(date +%H:%M) | $agent | $id | $step | $model | $tokens | $duration | $round | $status |"
-  spent=$(table_get "$state" "## Budget" "Spent so far")
-  is_number "$spent" || spent=0
-  is_number "$tokens" && spent=$((spent + tokens))
-  table_set "$state" "## Budget" "Spent so far" "$spent"
+  is_number "$tokens" && add_spend "$state" Subagents "$tokens"
+  sync_orchestrator "$run" "$state"
 
   echo "tokens: $tokens"
   echo "duration: $duration"
@@ -407,5 +531,5 @@ case "$cmd" in
   ack-soft) cmd_ack_soft "$@" ;;
   usage) cmd_usage "$@" ;;
   rework) cmd_rework "$@" ;;
-  *) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

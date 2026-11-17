@@ -42,7 +42,7 @@ The `team-handoff` contract (preloaded) defines the files, roles, status codes, 
 
 - `PROJECT` = the output of `pwd` at session start (plain `pwd`: `pwd -P` needs approval). `RUN_DIR` = `PROJECT/.team/runs/<run-id>`.
 - `stack-scan` = `~/.claude/skills/project-discovery/scripts/stack-scan.sh`
-- `run-state` = `~/.claude/skills/team-handoff/scripts/run-state.sh`. It does all counting: never compute tokens, budgets or rework rounds yourself.
+- `run-state` = `~/.claude/skills/team-handoff/scripts/run-state.sh`. It does all counting: never compute tokens, budgets or rework rounds yourself. Its budget figures include your own spend in this session, which it reads from your session transcript on every `budget`, `usage`, `check` and `ack-soft` call.
 - Retro protocol: `~/.claude/skills/team-handoff/retro.md`. Templates: `~/.claude/dev-team/templates/team/`.
 
 ## 1. Session start
@@ -104,7 +104,7 @@ Create run files just before the step that fills them: `run-state files RUN_DIR 
    Follow your agent instructions and the team-handoff contract. End with exactly one status line.
    ```
 3. **Wait** for the completion notification.
-4. **Log usage:** `run-state usage RUN_DIR <agent-id> <agent> "<step>" <round> <status-code>`. Use the status code only (`DONE`, `NEEDS_HUMAN`, `BLOCKED`, `NEEDS_REWORK`). Act on the `level:` line (§7). If it warns that no transcript was found, note it in *Owner decisions* once, and tell the owner that budgets are not enforced for that call.
+4. **Log usage:** `run-state usage RUN_DIR <agent-id> <agent> "<step>" <round> <status-code>`. Use the status code only (`DONE`, `NEEDS_HUMAN`, `BLOCKED`, `NEEDS_REWORK`). Act on the `level:` line (§7). If it warns that no transcript was found (for an agent or for your own session), note it in *Owner decisions* once, and tell the owner that this part of the spend is not counted.
 5. **Record** the reply's *Learnings* in *Candidate learnings* and its key facts in the right `state.md` section, then act on the status line (§5).
 6. **Resume** an agent with SendMessage, `to` = its agent ID, with the answer or the findings. Log usage again after it finishes: `run-state` counts only the new requests. If the resume is refused (for example after a restart), start a fresh agent with the same step. For a Developer, add `START_FROM: <its last head>`.
 7. A reply marked partial (`maxTurns`) → resume once with "continue". Partial again, or an API error twice → ask the owner.
@@ -134,13 +134,13 @@ Before each gate: set *Status* `waiting-for-owner`, write the brief, then ask wi
 | **1** | Goal, R and AC counts, scope in/out, assumptions to check | — |
 | **2** | Approach, new dependencies, risks, task list (and the roadmap in greenfield) | — |
 | **1+2** | S: the scope note. M: the requirements brief plus the design brief | — |
-| **3** | `cd <last worktree> && git diff --stat <run base>..<head>`, the Tester's verdict and AC counts, open minor findings, design deviations, profile changes, tokens spent | Options: `Merge`, `Rework` (with what), `Abort` |
+| **3** | `cd <last worktree> && git diff --stat <run base>..<head>`, the Tester's verdict and AC counts, open minor findings, design deviations, profile changes, tokens spent (run `run-state check RUN_DIR` first: subagents, Orchestrator and total) | Options: `Merge`, `Rework` (with what), `Abort` |
 
 **The first gate of a run** has a second question: the size (S, M or L, your proposal first), and in brownfield the mode too.
 
 ## 7. Budgets
 
-`level: soft` → tell the owner the spend and budget, and ask: (a) continue (`run-state ack-soft RUN_DIR`) (b) stop here. `level: hard` → do not start another agent. Ask: (a) raise the budget (`run-state budget RUN_DIR <size> <soft> <hard>` with the owner's numbers) (b) cut scope (c) abort. A budget never stops an agent that is already running. Check it again when that agent finishes.
+Your own turns count against the budget too, so the level can rise at a gate without an agent call. `level: soft` → tell the owner the spend (subagents and Orchestrator) and budget, and ask: (a) continue (`run-state ack-soft RUN_DIR`) (b) stop here. `level: hard` → do not start another agent. Ask: (a) raise the budget (`run-state budget RUN_DIR <size> <soft> <hard>` with the owner's numbers) (b) cut scope (c) abort. A budget never stops an agent that is already running. Check it again when that agent finishes.
 
 ## 8. Merge and finish (after Gate 3 approval)
 
@@ -150,7 +150,7 @@ Before each gate: set *Status* `waiting-for-owner`, write the brief, then ask wi
 4. **Retro:** follow `retro.md`. General learnings the owner approves go into your memory, tagged with the role they apply to. Pass them on as `OWNER RULES` in later prompts.
 5. Commit the project knowledge files that are new or changed (`.team/project-profile.md`, `stack-decision.md`, `roadmap.md`, `learnings.md`, `.gitignore`, and the agents' memory in `.claude/agent-memory/`; check with `git status --short .team .claude/agent-memory`) as `chore(team): update project knowledge [<run-id>]`.
 6. Remove the run's worktrees (`git worktree remove <path>`) and delete their merged branches (`git branch -d`, never `-D`).
-7. Set *Status* `done`. Final report: what was merged (commit), tasks and rounds, tokens spent against the budget, learnings written, anything stale or left open. Do not push. Tell the owner the branch is ready to push.
+7. Run `run-state check RUN_DIR` for the final figures, then set *Status* `done`. Final report: what was merged (commit), tasks and rounds, tokens spent against the budget (subagents, Orchestrator, total), learnings written, anything stale or left open. Do not push. Tell the owner the branch is ready to push.
 
 ## 9. Keeping context small
 

@@ -102,6 +102,7 @@ Do not paste file contents, diffs or logs into the reply.
 
 - Only the Orchestrator writes `state.md`. All counting goes through `scripts/run-state.sh` (in this skill's folder): run folders, budgets, usage rows and rework caps.
 - After every agent call, `run-state.sh usage` adds a usage-log row (agent, agent ID, step, model, tokens, duration, rework round, status). The figures are summed from the subagent's transcript, because the Agent tool result only reports the final request's tokens.
+- **All spend counts, the Orchestrator's own included.** `budget`, `usage`, `check` and `ack-soft` also add the Orchestrator session's new requests since the run started (from `CLAUDE_CODE_SESSION_ID`'s transcript) to one `orchestrator` row per session. The budgets apply to *Spent so far* = *Subagents* + *Orchestrator*.
 - Before each call the Orchestrator runs `run-state.sh check` and acts on its `level:` line.
 - When a run resumes, `state.md` is the source of truth for the current step, gate results, counters and worktree.
 
