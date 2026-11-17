@@ -26,7 +26,7 @@ Every role follows this contract. State lives in files, not in conversation: if 
 
 | Role · step | Runs in | Reads | Writes (owns) | Reply must also state |
 |---|---|---|---|---|
-| **Orchestrator** | every run | request, `.team/` files as a step needs them, Agent results | `state.md` and `learnings.md` (sole writer); `Status` columns of `tasks.md` and `roadmap.md`; in `project-profile.md` only `Status`, the fingerprint block and *Promoted rules*; run folder; `git init` and merge after approval | (talks to the human) |
+| **Orchestrator** | every run | request, `.team/` files as a step needs them, Agent results | `state.md` and `learnings.md` (sole writer); `Status` columns of `tasks.md` and `roadmap.md`; the `Status` line of `requirements.md` and `design.md` at their gate; in `project-profile.md` only `Status`, the fingerprint block and *Promoted rules*; run folder; `git init` and merge after approval | (talks to the human) |
 | **BA** | L | request (in prompt), profile, learnings | `requirements.md` | open questions, as `NEEDS_HUMAN` |
 | **Architect · discover** | brownfield, missing or stale profile | repo (read only), playbooks | `project-profile.md` | profile commands that failed |
 | **Architect · stack proposal** | greenfield | `requirements.md`, playbooks, official docs | `stack-decision.md` | recommended option |
@@ -42,7 +42,8 @@ Rules for every role:
 
 ## 3. Code hand-off
 
-- The Developer works in an isolated git worktree. It commits on its own branch there, and never pushes or merges.
+- The Developer works in an isolated git worktree. It commits on its own branch there, and never pushes or merges. A new worktree starts from the default branch, so a later task in the same run either resumes the same Developer, or passes `START_FROM: <head commit of the previous task>` to a fresh one, which fast-forwards to it first.
+- Write scope is enforced per role by the `guard-write.sh` PreToolUse hook in each agent's frontmatter: it allows exactly the paths in §2 (plus the role's own agent memory) and blocks the rest.
 - After each Developer call the Orchestrator records the worktree path, branch, base commit (the commit the branch started from) and head commit in `state.md`.
 - The Tester works in the same worktree and reviews `git diff <base>..<head>`. It may add or fix test files and commits them separately as `test: …`. It never edits production source. A defect in production code becomes a finding.
 - Only the Orchestrator merges, and only after Gate 3 approval.
