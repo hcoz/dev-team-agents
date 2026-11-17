@@ -1,6 +1,6 @@
 # dev-team-agents — Implementation Plan
 
-Status: **Final** · Date: 2026-11-16 (rev. 2026-11-17: cost controls; Phase 6 results; Orchestrator spend counted) · Language: English (all repo content)
+Status: **Final** · Date: 2026-11-16 (rev. 2026-11-17: cost controls; Phase 6 results; Orchestrator spend counted; Phase 7 released as v0.1.0) · Language: English (all repo content)
 
 ## 1. Goal
 
@@ -265,6 +265,8 @@ How it is produced:
 Commit conventions: Conventional Commits, one commit per phase minimum, small focused commits within a phase, work on short-lived branches merged to `main`.
 
 ## 7. Key decisions
+
+The reasoning, rejected alternatives and Phase 6 evidence for these decisions are in [design-decisions.md](design-decisions.md).
 
 | Decision | Choice | Reason |
 |---|---|---|
