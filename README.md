@@ -1,10 +1,22 @@
 # dev-team-agents
 
-A reusable multi-agent software team for [Claude Code](https://claude.com/claude-code). A Business Analyst, an Architect, a Developer and a Tester work under an Orchestrator.
+A multi-agent software team for [Claude Code](https://claude.com/claude-code). It turns a rough request into a tested change, ready to merge. You approve the decisions that matter, and the agents do the rest.
 
-You give the team a rough request such as "add authentication" or "build a booking app for a small clinic". The team analyzes it, designs a solution, implements it and tests it. It stops for your approval at a few defined **gates** and settles everything else among the agents. Nothing is merged without your approval, and nothing is ever pushed.
+You give the team a rough request such as "add authentication" or "build a booking app for a small clinic". A Business Analyst, an Architect, a Developer and a Tester, coordinated by an Orchestrator, analyze it, design a solution, implement it and test it. The team stops for your approval at a few defined **gates** and settles everything else among the agents. Nothing is merged without your approval, and nothing is ever pushed.
 
-The team works in any project and any stack, in two modes:
+## Why
+
+Give a single coding agent "add authentication", and it decides the scope, the design and sometimes the stack on its own. It then tests its own work, and spends whatever that takes. dev-team-agents changes three things:
+
+- **Clear roles.** Each role has one job and only the permissions that job needs. The agent that writes the code is not the one that verifies it.
+- **You decide at gates.** You approve the requirements, the design, the stack and the merge. Agents bring you only the questions they cannot settle themselves.
+- **Bounded runs.** Token budgets and rework caps limit every run. Each run leaves a record in plain Markdown that you can read, edit and commit.
+
+It is meant for developers who already use Claude Code and want more structure and control over larger changes, in a new project or an existing codebase, on any language or stack.
+
+## Modes
+
+The team works in two modes:
 
 | Mode | Starting point | How the stack is set |
 |---|---|---|
@@ -18,6 +30,7 @@ Both modes produce the same file, `.team/project-profile.md`. After the first ru
 ## Contents
 
 - [How it works](#how-it-works)
+- [Principles](#principles)
 - [Requirements](#requirements)
 - [Install](#install)
 - [Quick start: greenfield](#quick-start-greenfield)
@@ -34,6 +47,7 @@ Both modes produce the same file, `.team/project-profile.md`. After the first ru
 - [Troubleshooting](#troubleshooting)
 - [Update and uninstall](#update-and-uninstall)
 - [Repository layout](#repository-layout)
+- [Contributing](#contributing)
 
 ## How it works
 
@@ -57,6 +71,24 @@ You ──► Orchestrator (main session: claude --agent orchestrator)
 | **Tester** | Sonnet (Haiku for the full pass) | `test-report.md`, test files | Edits production code (a defect becomes a finding) |
 
 The agents talk through files in `<project>/.team/`, not through conversation. Every agent ends with one status line: `DONE`, `NEEDS_HUMAN`, `BLOCKED` or `NEEDS_REWORK`. The Orchestrator routes on it. When the Tester finds defects, the Orchestrator sends them back to the same Developer, at most 3 rounds per task and 8 per run, and then asks you.
+
+## Principles
+
+These principles shape every agent prompt, hook and script in this repo.
+
+| Principle | How the team applies it |
+|---|---|
+| **Human in the loop at decision points** | Four gates (stack, requirements, design, merge). Agents raise anything only you can decide as `NEEDS_HUMAN`. The team never merges without your approval and never pushes. |
+| **Separation of duties** | The Developer writes code but cannot merge. The Tester verifies but cannot edit production code: a defect becomes a finding. The BA and Architect never touch source code. |
+| **Least privilege, enforced** | Per-role hooks limit each agent's file writes and shell commands. The rules do not rely on prompts alone. |
+| **Bounded autonomy** | Soft and hard token budgets, rework caps, `maxTurns` per agent. A run is never upsized without your approval. |
+| **Grounded, not guessed** | Agents use only build and test commands recorded in the project profile, and those commands are proven by running them. Stack versions are checked against official sources, not recalled from model memory. |
+| **Context isolation, explicit hand-offs** | Each agent runs in its own context. Hand-offs go through files on disk, and agents reply with short summaries. This keeps contexts small and lets an interrupted run resume. |
+| **Deterministic where possible** | Mode detection, fingerprints, token counting, budgets and rework caps are done by scripts, not by the model. |
+| **Transparent, reviewable learning** | Lessons are plain Markdown files that you can read, edit and commit. Nothing becomes a cross-project rule without your approval. |
+| **Right-sized effort** | Small requests skip steps. The strongest model is used only for design and stack decisions, where mistakes cost the most. |
+
+The reasoning and the rejected alternatives for each choice are in [docs/design-decisions.md](docs/design-decisions.md).
 
 ## Requirements
 
@@ -154,7 +186,7 @@ Replace these with your own commands, e.g. `Bash(make test)` or `Bash(.venv/bin/
 
 ## Running headless
 
-All Phase 6 validation ran in print mode, one Orchestrator turn per call:
+All validation runs so far used print mode, one Orchestrator turn per call:
 
 ```sh
 claude -p --agent orchestrator "Add authentication"
@@ -256,7 +288,7 @@ The team learns at three levels:
 
 Every agent call, and the Orchestrator's own session, is measured from the transcripts and logged in `state.md`. Figures are **input-token equivalents**: `input + 1.25 × cache writes + 0.1 × cache reads + 5 × output`, which weights tokens roughly by price.
 
-| Size | Default soft budget | Default hard budget | Phase 6 runs (subagents + Orchestrator) |
+| Size | Default soft budget | Default hard budget | Validation runs (subagents + Orchestrator) |
 |---|---|---|---|
 | S | 750k | 1.5M | 351k–718k |
 | M | 1.8M | 3.6M | 1.17M |
@@ -345,7 +377,15 @@ Uninstall removes the symlinks and moves copies to `~/.claude/dev-team-backups/<
 | [templates/team/](templates/team/) | Skeletons for the `.team/` files in target projects |
 | [settings/](settings/) | Settings snippet: default budgets, script allow rules, `additionalDirectories` |
 | [scripts/](scripts/) | `install.sh`, `uninstall.sh` |
-| [docs/](docs/) | [Implementation plan](docs/implementation-plan.md), [design decisions](docs/design-decisions.md), [end-to-end dry-run notes](docs/e2e-dry-run-notes.md) |
+| [docs/](docs/) | [Design decisions](docs/design-decisions.md), [end-to-end validation notes](docs/e2e-dry-run-notes.md) |
+
+## Contributing
+
+- Use [Conventional Commits](https://www.conventionalcommits.org/) on short-lived branches.
+- Keep agent prompts and preloaded skills short and stable. They are loaded on every call, and stable text keeps prompt caching effective. Put long reference material in skills that agents load on demand.
+- Keep the core stack-agnostic. Knowledge about one stack belongs in [playbooks/](playbooks/), not in agent prompts.
+- When you change a design choice, update its entry in [docs/design-decisions.md](docs/design-decisions.md).
+- Check installer changes with `scripts/install.sh --dry-run` and `scripts/uninstall.sh --dry-run`.
 
 ## License
 
