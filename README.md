@@ -7,7 +7,19 @@ You give the team a rough request. It analyzes, designs, implements and tests th
 - **Greenfield:** in an empty directory, the team proposes a tech stack for you to approve.
 - **Brownfield:** in an existing codebase, the team discovers the stack and conventions for you to confirm.
 
-> **Status:** early development (Phase 4 done: orchestrator with modes, sizing, gates and budgets). Nothing is installable yet.
+> **Status:** early development (Phase 5 done: install script and guard hooks). Installable, not yet validated end to end.
+
+## Install
+
+Requires Claude Code 2.1.295 or later, `git`, and `jq` or `python3`.
+
+```sh
+git clone <this repo> && cd dev-team-agents
+scripts/install.sh                  # symlinks into ~/.claude (use --copy to copy instead)
+scripts/install.sh --with-settings  # also merge default budgets and script allow rules into ~/.claude/settings.json
+```
+
+Then, in a project directory: `claude --agent orchestrator`. Anything the installer would overwrite is moved to `~/.claude/dev-team-backups/` first. `scripts/uninstall.sh` reverses the install and restores those files. Both scripts take `--dry-run`.
 
 ## Layout
 

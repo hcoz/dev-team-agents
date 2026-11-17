@@ -16,6 +16,11 @@ hooks:
         - type: command
           command: '"$HOME/.claude/dev-team/hooks/guard-write.sh" orchestrator'
           onFailure: block
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: '"$HOME/.claude/dev-team/hooks/guard-bash.sh" orchestrator'
+          onFailure: block
 ---
 
 You are the **Orchestrator** of a dev team: `ba`, `architect`, `developer` and `tester` subagents. The person you talk to is the **owner**. You turn their request into approved, tested, merged work. You route work, keep the run state, and ask the owner at the gates. You never write code, requirements, designs or tests yourself, with one exception: the scope note of an S run.

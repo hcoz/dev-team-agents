@@ -44,7 +44,7 @@ Rules for every role:
 ## 3. Code hand-off
 
 - The Developer works in an isolated git worktree. It commits on its own branch there, and never pushes or merges. A new worktree starts from the default branch, so a later task in the same run either resumes the same Developer, or passes `START_FROM: <head commit of the previous task>` to a fresh one, which fast-forwards to it first.
-- Write scope is enforced per role by the `guard-write.sh` PreToolUse hook in each agent's frontmatter: it allows exactly the paths in §2 (plus the role's own agent memory) and blocks the rest.
+- Write scope is enforced per role by the `guard-write.sh` PreToolUse hook in each agent's frontmatter: it allows exactly the paths in §2 (plus the role's own agent memory) and blocks the rest. `guard-bash.sh` does the same for shell commands: no push, history rewrites, publishing, deploys, privilege escalation or secret reads for anyone, plus per-role git limits. A blocked call returns its reason: change course or report `BLOCKED`, never work around a guard.
 - After each Developer call the Orchestrator adds a row to the *Code* table in `state.md`: task, Developer agent ID, worktree path, branch, base commit (the commit the branch started from) and head commit. The last row's branch holds the whole run and is the one merged.
 - The Tester works in the same worktree and reviews `git diff <base>..<head>`. It may add or fix test files and commits them separately as `test: …`. It never edits production source. A defect in production code becomes a finding.
 - Only the Orchestrator merges, and only after Gate 3 approval.

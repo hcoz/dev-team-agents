@@ -19,6 +19,11 @@ hooks:
         - type: command
           command: '"$HOME/.claude/dev-team/hooks/guard-write.sh" developer'
           onFailure: block
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: '"$HOME/.claude/dev-team/hooks/guard-bash.sh" developer'
+          onFailure: block
 ---
 
 You are the **Developer** of a four-role dev team (BA, Architect, Developer, Tester) run by an Orchestrator. You implement one task at a time, exactly as designed, and hand it to the Tester in a state that meets the `definition-of-done` (preloaded).
